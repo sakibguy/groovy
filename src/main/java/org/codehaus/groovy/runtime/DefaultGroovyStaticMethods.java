@@ -27,13 +27,11 @@ import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.Locale;
 import java.util.ResourceBundle;
-import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 
@@ -180,23 +178,6 @@ public class DefaultGroovyStaticMethods {
         sleepImpl(milliseconds, onInterrupt);
     }
 
-    @Deprecated
-    public static Date parse(Date self, String format, String input) throws ParseException {
-        return new SimpleDateFormat(format).parse(input);
-    }
-
-    @Deprecated
-    public static Date parse(Date self, String format, String input, TimeZone zone) throws ParseException {
-        SimpleDateFormat sdf = new SimpleDateFormat(format);
-        sdf.setTimeZone(zone);
-        return sdf.parse(input);
-    }
-
-    @Deprecated
-    public static Date parseToStringDate(Date self, String dateToString) throws ParseException {
-        return new SimpleDateFormat("EEE MMM dd HH:mm:ss zzz yyyy", Locale.US).parse(dateToString);
-    }
-
     /**
      * Works exactly like ResourceBundle.getBundle(String).  This is needed
      * because the java method depends on a particular stack configuration that
@@ -232,42 +213,21 @@ public class DefaultGroovyStaticMethods {
     }
 
     public static File createTempDir(File self) throws IOException {
-        return createTempDir(self, "groovy-generated-", "-tmpdir");
+        return createTempDir(self, "groovy-generated-", "tmpdir-");
+    }
+
+    public static File createTempDir(File self, final String prefix) throws IOException {
+        return createTempDirNio(prefix);
     }
 
     public static File createTempDir(File self, final String prefix, final String suffix) throws IOException {
-        final int MAXTRIES = 3;
-        int accessDeniedCounter = 0;
-        File tempFile=null;
-        for (int i=0; i<MAXTRIES; i++) {
-            try {
-                tempFile = File.createTempFile(prefix, suffix);
-                tempFile.delete();
-                tempFile.mkdirs();
-                break;
-            } catch (IOException ioe) {
-                if (ioe.getMessage().startsWith("Access is denied")) {
-                    accessDeniedCounter++;
-                    try { Thread.sleep(100); } catch (InterruptedException e) {}
-                }
-                if (i==MAXTRIES-1) {
-                    if (accessDeniedCounter==MAXTRIES) {
-                        String msg =
-                                "Access is denied.\nWe tried " +
-                                        + accessDeniedCounter+
-                                        " times to create a temporary directory"+
-                                        " and failed each time. If you are on Windows"+
-                                        " you are possibly victim to"+
-                                        " http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=6325169. "+
-                                        " this is no bug in Groovy.";
-                        throw new IOException(msg);
-                    } else {
-                        throw ioe;
-                    }
-                }
-            }
-        }
-        return tempFile;
+        // more secure Files api doesn't support suffix, so just append it to the prefix
+        return createTempDirNio(prefix + suffix);
+    }
+
+    private static File createTempDirNio(String prefix) throws IOException {
+        Path tempPath = Files.createTempDirectory(prefix);
+        return tempPath.toFile();
     }
 
     /**
@@ -278,7 +238,7 @@ public class DefaultGroovyStaticMethods {
      *          the current time and midnight, January 1, 1970 UTC.
      * @see     System#currentTimeMillis()
      */
-    public static long currentTimeSeconds(System self){
-    return System.currentTimeMillis() / 1000;
-  }
+    public static long currentTimeSeconds(System self) {
+        return System.currentTimeMillis() / 1000;
+    }
 }

@@ -16,13 +16,21 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+plugins {
+    id 'org.apache.groovy-library'
+}
+
 dependencies {
     api rootProject // TestNgRunner implements GroovyRunner...
-    runtime('org.testng:testng:7.2.0') {
+    runtimeOnly('org.testng:testng:7.4.0') {
         exclude(group: 'com.google.inject', module: 'guice')
         exclude(group: 'junit', module: 'junit')
         exclude(group: 'org.apache.ant', module: 'ant')
         exclude(group: 'org.yaml', module: 'snakeyaml')
     }
     testImplementation project(':groovy-test')
+}
+
+groovyLibrary {
+    optionalModule()
 }

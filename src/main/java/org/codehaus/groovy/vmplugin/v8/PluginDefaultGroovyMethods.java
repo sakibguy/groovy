@@ -29,6 +29,7 @@ import org.codehaus.groovy.runtime.InvokerHelper;
 import org.codehaus.groovy.runtime.NullObject;
 import org.codehaus.groovy.runtime.RangeInfo;
 
+import java.lang.management.ManagementFactory;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.util.Arrays;
@@ -54,6 +55,7 @@ import java.util.function.IntFunction;
 import java.util.function.IntPredicate;
 import java.util.function.LongFunction;
 import java.util.function.LongPredicate;
+import java.util.function.Supplier;
 import java.util.function.ToDoubleFunction;
 import java.util.function.ToIntFunction;
 import java.util.function.ToLongFunction;
@@ -527,7 +529,7 @@ public class PluginDefaultGroovyMethods extends DefaultGroovyMethodsSupport {
      * }
      *
      * // Stream#toArray(IntFunction) should still be used for closure literal:
-     * assert Arrays.equals(['x'].stream().toArray { n -> new String[n] }, ['x'] as String[])
+     * assert Arrays.equals(['x'].stream().toArray { n -&gt; new String[n] }, ['x'] as String[])
      *
      * // Stream#toArray(IntFunction) should still be used for method reference:
      * assert Arrays.equals(['x'].stream().toArray(String[]::new), ['x'] as String[])
@@ -653,6 +655,19 @@ public class PluginDefaultGroovyMethods extends DefaultGroovyMethodsSupport {
     }
 
     /**
+     * Returns a sequential {@link IntStream} with the specified array as its
+     * source.
+     *
+     * @param self The array, assumed to be unmodified during use
+     * @return a {@code Stream} for the array
+     *
+     * @since 3.0.8
+     */
+    public static IntStream intStream(final int[] self) {
+        return Arrays.stream(self);
+    }
+
+    /**
      * Returns a sequential {@link Stream} with the specified array as its
      * source.
      *
@@ -666,6 +681,19 @@ public class PluginDefaultGroovyMethods extends DefaultGroovyMethodsSupport {
     }
 
     /**
+     * Returns a sequential {@link LongStream} with the specified array as its
+     * source.
+     *
+     * @param self The array, assumed to be unmodified during use
+     * @return a {@code Stream} for the array
+     *
+     * @since 3.0.8
+     */
+    public static LongStream longStream(final long[] self) {
+        return Arrays.stream(self);
+    }
+
+    /**
      * Returns a sequential {@link Stream} with the specified array as its
      * source.
      *
@@ -676,6 +704,19 @@ public class PluginDefaultGroovyMethods extends DefaultGroovyMethodsSupport {
      */
     public static Stream<Double> stream(final double[] self) {
         return Arrays.stream(self).boxed();
+    }
+
+    /**
+     * Returns a sequential {@link DoubleStream} with the specified array as its
+     * source.
+     *
+     * @param self The array, assumed to be unmodified during use
+     * @return a {@code Stream} for the array
+     *
+     * @since 3.0.8
+     */
+    public static DoubleStream doubleStream(final double[] self) {
+        return Arrays.stream(self);
     }
 
     /**
@@ -812,8 +853,8 @@ public class PluginDefaultGroovyMethods extends DefaultGroovyMethodsSupport {
      * source.
      *
      * <pre class="groovyTestCase">
-     * [].spliterator().stream().toList().isEmpty()
-     * ['one', 'two'].spliterator().stream().toList() == ['one', 'two']
+     * assert [].spliterator().stream().toList().isEmpty()
+     * assert ['one', 'two'].spliterator().stream().toList() == ['one', 'two']
      * </pre>
      *
      * @since 3.0.0
@@ -869,5 +910,33 @@ public class PluginDefaultGroovyMethods extends DefaultGroovyMethodsSupport {
             return DoubleStream.empty();
         }
         return DoubleStream.of(self.getAsDouble());
+    }
+
+    /**
+     * Provide similar functionality to JDK9 {@code or} on JDK8.
+     *
+     * @since 3.0.6
+     */
+    public static <T> Optional<T> orOptional(Optional<T> self, Supplier<? extends Optional<? extends T>> supplier) {
+        if (self.isPresent()) {
+            return self;
+        }
+        return (Optional<T>) supplier.get();
+    }
+
+    /**
+     * Get the pid of the current Java process
+     *
+     * @param self
+     * @return the pid
+     * @since 4.0.0
+     */
+    public static String getPid(Runtime self) {
+        String name = ManagementFactory.getRuntimeMXBean().getName();
+        int index = name.indexOf('@');
+        if (-1 == index) { // should never happen
+            return name;
+        }
+        return name.substring(0, index);
     }
 }

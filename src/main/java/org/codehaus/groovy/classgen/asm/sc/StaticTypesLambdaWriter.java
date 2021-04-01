@@ -33,6 +33,7 @@ import org.codehaus.groovy.ast.expr.LambdaExpression;
 import org.codehaus.groovy.ast.expr.VariableExpression;
 import org.codehaus.groovy.ast.stmt.BlockStatement;
 import org.codehaus.groovy.ast.stmt.Statement;
+import org.codehaus.groovy.ast.tools.ClosureUtils;
 import org.codehaus.groovy.classgen.BytecodeInstruction;
 import org.codehaus.groovy.classgen.BytecodeSequence;
 import org.codehaus.groovy.classgen.asm.BytecodeHelper;
@@ -59,7 +60,6 @@ import static org.codehaus.groovy.ast.ClassHelper.SERIALIZABLE_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.SERIALIZEDLAMBDA_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.VOID_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.findSAM;
-import static org.codehaus.groovy.ast.ClassHelper.isGeneratedFunction;
 import static org.codehaus.groovy.ast.ClassHelper.long_TYPE;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.block;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.classX;
@@ -71,7 +71,6 @@ import static org.objectweb.asm.Opcodes.ACC_FINAL;
 import static org.objectweb.asm.Opcodes.ACC_PRIVATE;
 import static org.objectweb.asm.Opcodes.ACC_PUBLIC;
 import static org.objectweb.asm.Opcodes.ACC_STATIC;
-import static org.objectweb.asm.Opcodes.ACC_SYNTHETIC;
 import static org.objectweb.asm.Opcodes.ALOAD;
 import static org.objectweb.asm.Opcodes.CHECKCAST;
 import static org.objectweb.asm.Opcodes.DUP;
@@ -116,7 +115,7 @@ public class StaticTypesLambdaWriter extends LambdaWriter implements AbstractFun
         }
 
         ClassNode enclosingClass = controller.getClassNode();
-        int modifiers = ACC_FINAL | ACC_PUBLIC | ACC_SYNTHETIC;
+        int modifiers = ACC_FINAL | ACC_PUBLIC;
         if (enclosingClass.isInterface()) modifiers |= ACC_STATIC;
         ClassNode lambdaClass = getOrAddLambdaClass(expression, modifiers, abstractMethod);
         MethodNode lambdaMethod = lambdaClass.getMethods("doCall").get(0);
@@ -175,11 +174,7 @@ public class StaticTypesLambdaWriter extends LambdaWriter implements AbstractFun
         mv.visitInsn(DUP);
 
         if (controller.isStaticMethod() || compileStack.isInSpecialConstructorCall() || !accessingInstanceMembers) {
-            ClassNode classNode = controller.getClassNode();
-            while (isGeneratedFunction(classNode)) {
-                classNode = classNode.getOuterClass();
-            }
-            classX(classNode).visit(controller.getAcg());
+            classX(controller.getThisType()).visit(controller.getAcg());
         } else {
             loadThis();
         }
@@ -297,23 +292,15 @@ public class StaticTypesLambdaWriter extends LambdaWriter implements AbstractFun
     }
 
     private Parameter[] createParametersWithExactType(final LambdaExpression expression) {
-        Parameter[] parameters = expression.getParameters();
-        if (parameters == null) {
-            parameters = Parameter.EMPTY_ARRAY;
-        }
-
+        Parameter[] parameters = ClosureUtils.getParametersSafe(expression);
         for (Parameter parameter : parameters) {
             ClassNode inferredType = parameter.getNodeMetaData(StaticTypesMarker.INFERRED_TYPE);
-            if (inferredType == null) {
-                continue;
+            if (inferredType != null) {
+                ClassNode type = convertParameterType(parameter.getType(), inferredType);
+                parameter.setOriginType(type);
+                parameter.setType(type);
             }
-
-            ClassNode type = convertParameterType(parameter.getType(), inferredType);
-
-            parameter.setType(type);
-            parameter.setOriginType(type);
         }
-
         return parameters;
     }
 

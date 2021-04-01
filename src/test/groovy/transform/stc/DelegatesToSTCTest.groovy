@@ -278,24 +278,21 @@ class DelegatesToSTCTest extends StaticTypeCheckingTestCase {
     }
 
     void testShouldFailDelegateToParameterIfNoTargetSpecified() {
-        shouldFailWithMessages '''
-        class Foo {
-            boolean called = false
-            def foo() { called = true }
-        }
+        shouldFailWithMessages '''\
+            class Foo {
+                boolean called = false
+                def bar() { called = true }
+            }
 
-        def with(Object target, @DelegatesTo Closure arg) {
-            arg.delegate = target
-            arg()
-        }
+            def m(Object o, @DelegatesTo Closure c) {
+                c.delegate = o
+                c.call()
+            }
 
-        def test() {
-            def obj = new Foo()
-            with(obj) { foo() }
-            assert obj.called
-        }
-        test()
-        ''', 'Not enough arguments found for a @DelegatesTo method call', 'Cannot find matching method'
+            def foo = new Foo()
+            m(foo) { -> bar() }
+            assert foo.called
+        ''', 'Not enough arguments found for a @DelegatesTo method call', '@ line 6, column 29', 'Cannot find matching method'
     }
 
     void testDelegatesToWithSetter() {
@@ -816,5 +813,30 @@ class DelegatesToSTCTest extends StaticTypeCheckingTestCase {
                 size() == 3
             }
         '''
+    }
+
+    // GROOVY-7996
+    void testErrorForMismatchedClosureResolveStrategy() {
+        shouldFailWithMessages '''
+            class Foo {
+                def build(Closure x) { // resolve strategy OWNER_FIRST
+                    this.with(x) // resolve strategy DELEGATE_FIRST
+                }
+                def propertyMissing(String name) {
+                    'something'
+                }
+            }
+
+            class Bar {
+                protected List bars = []
+                def baz() {
+                    new Foo().build {
+                        bars.isEmpty() // fails if executed; delegate's propertyMissing takes precedence
+                    }
+                }
+            }
+
+            new Bar().baz()
+        ''', 'Closure parameter with resolve strategy OWNER_FIRST passed to method with resolve strategy DELEGATE_FIRST'
     }
 }

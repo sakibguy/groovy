@@ -49,8 +49,10 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -143,7 +145,7 @@ public class StringGroovyMethods extends DefaultGroovyMethodsSupport {
         } else if (Number.class.isAssignableFrom(c) || c.isPrimitive()) {
             return asType(self.toString(), c);
         }
-        return DefaultGroovyMethods.asType((Object) self, c);
+        return DefaultGroovyMethods.asType(self, c);
     }
 
     /**
@@ -179,31 +181,31 @@ public class StringGroovyMethods extends DefaultGroovyMethodsSupport {
     @SuppressWarnings("unchecked")
     public static <T> T asType(final String self, final Class<T> c) {
         if (c == List.class) {
-            return (T) toList((CharSequence)self);
+            return (T) toList(self);
         } else if (c == BigDecimal.class) {
-            return (T) toBigDecimal((CharSequence)self);
+            return (T) toBigDecimal(self);
         } else if (c == BigInteger.class) {
-            return (T) toBigInteger((CharSequence)self);
+            return (T) toBigInteger(self);
         } else if (c == Long.class || c == Long.TYPE) {
-            return (T) toLong((CharSequence)self);
+            return (T) toLong(self);
         } else if (c == Integer.class || c == Integer.TYPE) {
-            return (T) toInteger((CharSequence)self);
+            return (T) toInteger(self);
         } else if (c == Short.class || c == Short.TYPE) {
-            return (T) toShort((CharSequence)self);
+            return (T) toShort(self);
         } else if (c == Byte.class || c == Byte.TYPE) {
             return (T) Byte.valueOf(self.trim());
         } else if (c == Character.class || c == Character.TYPE) {
             return (T) toCharacter(self);
         } else if (c == Double.class || c == Double.TYPE) {
-            return (T) toDouble((CharSequence)self);
+            return (T) toDouble(self);
         } else if (c == Float.class || c == Float.TYPE) {
-            return (T) toFloat((CharSequence)self);
+            return (T) toFloat(self);
         } else if (c == File.class) {
             return (T) new File(self);
         } else if (c.isEnum()) {
             return (T) InvokerHelper.invokeMethod(c, "valueOf", new Object[]{ self });
         }
-        return DefaultGroovyMethods.asType((Object) self, c);
+        return DefaultGroovyMethods.asType(self, c);
     }
 
     /**
@@ -216,6 +218,20 @@ public class StringGroovyMethods extends DefaultGroovyMethodsSupport {
      */
     public static Pattern bitwiseNegate(final CharSequence self) {
         return Pattern.compile(self.toString());
+    }
+
+    /**
+     * Append the GString to the StringBuilder using a more efficient
+     * approach than Java's default approach for a CharSequence.
+     *
+     * @param sb a StringBuilder
+     * @param gs a GStringImpl
+     * @return the StringBuilder
+     *
+     * @since 3.0.8
+     */
+    public static StringBuilder append(final StringBuilder sb, GStringImpl gs) {
+        return sb.append(gs.toString());
     }
 
     /**
@@ -542,14 +558,17 @@ public class StringGroovyMethods extends DefaultGroovyMethodsSupport {
             length = delegate.length();
         }
 
+        @Override
         public boolean hasNext() {
             return index < length;
         }
 
+        @Override
         public Character next() {
             return delegate.charAt(index++);
         }
 
+        @Override
         public void remove() {
             throw new UnsupportedOperationException("Remove not supported for CharSequence iterators");
         }
@@ -565,14 +584,17 @@ public class StringGroovyMethods extends DefaultGroovyMethodsSupport {
             length = delegate.length();
         }
 
+        @Override
         public boolean hasNext() {
             return index < length;
         }
 
+        @Override
         public String next() {
             return Character.toString(delegate.charAt(index++));
         }
 
+        @Override
         public void remove() {
             throw new UnsupportedOperationException("Remove not supported for CharSequence iterators");
         }
@@ -668,6 +690,59 @@ public class StringGroovyMethods extends DefaultGroovyMethodsSupport {
                     sb.append(self, 0, i);
                 }
                 sb.append(replacement);
+            } else if (sb != null) {
+                // earlier output differs from input; we write to our local buffer
+                sb.append(ch);
+            }
+        }
+
+        return sb == null ? self : sb.toString();
+    }
+
+    /**
+     * Iterates through this String a character at a time collecting either the
+     * original character or a transformed replacement String.
+     * The return value is an {@code Optional} either having a value equal to the transformed replacement String
+     * or {@code empty()} to indicate that no transformation is required.
+     * <p>
+     * <pre class="groovyTestCase">
+     * import java.util.function.Function
+     * import static java.util.Optional.*
+     *
+     * Function&lt;Character, Optional&lt;String&gt;&gt; xform1 = s -&gt; s == 'o' ? of('_O') : empty()
+     * Function&lt;Character, Optional&lt;String&gt;&gt; xform2 = { it == 'G' ? of('G_') : empty() }
+     * assert "Groovy".collectReplacements([xform1, xform2]) == 'G_r_O_Ovy'
+     * </pre>
+     *
+     * @param self the original String
+     * @param transforms one or more transforms which potentially convert a single character to a transformed string
+     * @return A new string in which all characters that require escaping
+     *         have been replaced with the corresponding replacements
+     *         as determined by the {@code transform} function.
+     *
+     * @since 3.0.6
+     */
+    public static String collectReplacements(final String self, final List<Function<Character, Optional<String>>> transforms) {
+        if (self == null) return self;
+
+        StringBuilder sb = null; // lazy create for edge-case efficiency
+        for (int i = 0, len = self.length(); i < len; i++) {
+            final char ch = self.charAt(i);
+            Optional<String> replacement = Optional.empty();
+            for (Function<Character, Optional<String>> next : transforms) {
+                replacement = next.apply(ch);
+                if (replacement.isPresent()) {
+                    break;
+                }
+            }
+
+            if (replacement.isPresent()) {
+                // output differs from input; we write to our local buffer
+                if (sb == null) {
+                    sb = new StringBuilder((int) (1.1 * len));
+                    sb.append(self, 0, i);
+                }
+                sb.append(replacement.get());
             } else if (sb != null) {
                 // earlier output differs from input; we write to our local buffer
                 sb.append(ch);
@@ -1679,6 +1754,7 @@ public class StringGroovyMethods extends DefaultGroovyMethodsSupport {
         return new Iterator() {
             private boolean done, found;
 
+            @Override
             public boolean hasNext() {
                 if (done) {
                     return false;
@@ -1692,6 +1768,7 @@ public class StringGroovyMethods extends DefaultGroovyMethodsSupport {
                 return found;
             }
 
+            @Override
             public Object next() {
                 if (!found) {
                     if (!hasNext()) {
@@ -1715,6 +1792,7 @@ public class StringGroovyMethods extends DefaultGroovyMethodsSupport {
                 }
             }
 
+            @Override
             public void remove() {
                 throw new UnsupportedOperationException();
             }

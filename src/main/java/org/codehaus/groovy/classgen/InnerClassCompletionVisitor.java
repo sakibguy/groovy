@@ -33,7 +33,6 @@ import org.codehaus.groovy.classgen.asm.BytecodeHelper;
 import org.codehaus.groovy.control.CompilationUnit;
 import org.codehaus.groovy.control.SourceUnit;
 import org.objectweb.asm.MethodVisitor;
-import org.objectweb.asm.Opcodes;
 
 import java.util.List;
 import java.util.function.BiConsumer;
@@ -46,14 +45,26 @@ import static org.codehaus.groovy.ast.ClassHelper.OBJECT_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.STRING_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.VOID_TYPE;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.block;
+import static org.codehaus.groovy.ast.tools.GeneralUtils.castX;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.classX;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.ctorSuperX;
+import static org.codehaus.groovy.ast.tools.GeneralUtils.ctorThisX;
+import static org.codehaus.groovy.ast.tools.GeneralUtils.nullX;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.param;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.params;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.stmt;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.varX;
+import static org.objectweb.asm.Opcodes.ACC_PUBLIC;
+import static org.objectweb.asm.Opcodes.ACC_STATIC;
+import static org.objectweb.asm.Opcodes.ACC_SYNTHETIC;
+import static org.objectweb.asm.Opcodes.ALOAD;
+import static org.objectweb.asm.Opcodes.ARETURN;
+import static org.objectweb.asm.Opcodes.CHECKCAST;
+import static org.objectweb.asm.Opcodes.GETFIELD;
+import static org.objectweb.asm.Opcodes.INVOKEVIRTUAL;
+import static org.objectweb.asm.Opcodes.RETURN;
 
-public class InnerClassCompletionVisitor extends InnerClassVisitorHelper implements Opcodes {
+public class InnerClassCompletionVisitor extends InnerClassVisitorHelper {
 
     private ClassNode classNode;
     private FieldNode thisField;
@@ -73,7 +84,7 @@ public class InnerClassCompletionVisitor extends InnerClassVisitorHelper impleme
     }
 
     @Override
-    public void visitClass(ClassNode node) {
+    public void visitClass(final ClassNode node) {
         classNode = node;
         thisField = null;
         InnerClassNode innerClass = null;
@@ -94,9 +105,33 @@ public class InnerClassCompletionVisitor extends InnerClassVisitorHelper impleme
     }
 
     @Override
-    public void visitConstructor(ConstructorNode node) {
+    public void visitConstructor(final ConstructorNode node) {
         addThisReference(node);
         super.visitConstructor(node);
+        // an anonymous inner class may use a private constructor (via a bridge) if its super class is also an outer class
+        if (((InnerClassNode) classNode).isAnonymous() && classNode.getOuterClasses().contains(classNode.getSuperClass())) {
+            ConstructorNode superCtor = classNode.getSuperClass().getDeclaredConstructor(node.getParameters());
+            if (superCtor != null && superCtor.isPrivate()) {
+                ClassNode superClass = classNode.getUnresolvedSuperClass();
+                makeBridgeConstructor(superClass, node.getParameters()); // GROOVY-5728
+                ConstructorCallExpression superCtorCall = getFirstIfSpecialConstructorCall(node.getCode());
+                ((TupleExpression) superCtorCall.getArguments()).addExpression(castX(superClass, nullX()));
+            }
+        }
+    }
+
+    private static void makeBridgeConstructor(final ClassNode c, final Parameter[] p) {
+        Parameter[] newP = new Parameter[p.length + 1];
+        for (int i = 0; i < p.length; i += 1) {
+            newP[i] = new Parameter(p[i].getType(), "p" + i);
+        }
+        newP[p.length] = new Parameter(c, "$anonymous");
+
+        if (c.getDeclaredConstructor(newP) == null) {
+            TupleExpression args = new TupleExpression();
+            for (int i = 0; i < p.length; i += 1) args.addExpression(varX(newP[i]));
+            addGeneratedConstructor(c, ACC_SYNTHETIC, newP, ClassNode.EMPTY_ARRAY, stmt(ctorThisX(args)));
+        }
     }
 
     private static String getTypeDescriptor(ClassNode node, boolean isStatic) {
@@ -274,24 +309,21 @@ public class InnerClassCompletionVisitor extends InnerClassVisitorHelper impleme
         );
     }
 
-    private void addSyntheticMethod(final InnerClassNode node, final String methodName, final int modifiers,
+    private void addSyntheticMethod(final InnerClassNode innerClass, final String methodName, final int modifiers,
             final ClassNode returnType, final Parameter[] parameters, final BiConsumer<BlockStatement, Parameter[]> consumer) {
-        MethodNode method = node.getMethod(methodName, parameters);
-        if (method != null) {
-            // GROOVY-8914: pre-compiled classes lose synthetic boolean - TODO fix earlier as per GROOVY-4346 then remove extra check here
-            if (isStatic(node) && !method.isSynthetic() && (method.getModifiers() & ACC_SYNTHETIC) == 0) {
-                // if there is a user-defined methodNode, add compiler error and continue
-                addError("\"" + methodName + "\" implementations are not supported on static inner classes as " +
-                    "a synthetic version of \"" + methodName + "\" is added during compilation for the purpose " +
-                    "of outer class delegation.",
-                    method);
-            }
-            return;
-        }
+        MethodNode method = innerClass.getDeclaredMethod(methodName, parameters);
+        if (method == null) {
+            BlockStatement methodBody = block();
+            consumer.accept(methodBody, parameters);
+            innerClass.addSyntheticMethod(methodName, modifiers, returnType, parameters, ClassNode.EMPTY_ARRAY, methodBody);
 
-        BlockStatement methodBody = block();
-        consumer.accept(methodBody, parameters);
-        node.addSyntheticMethod(methodName, modifiers, returnType, parameters, ClassNode.EMPTY_ARRAY, methodBody);
+            // if there is a user-defined method, add compiler error and continue
+        } else if (isStatic(innerClass) && (method.getModifiers() & ACC_SYNTHETIC) == 0) {
+            addError("\"" + methodName + "\" implementations are not supported on static inner classes as " +
+                "a synthetic version of \"" + methodName + "\" is added during compilation for the purpose " +
+                "of outer class delegation.",
+                method);
+        }
     }
 
     private void addThisReference(ConstructorNode node) {

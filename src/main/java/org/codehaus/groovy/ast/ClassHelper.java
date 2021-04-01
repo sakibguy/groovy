@@ -47,13 +47,12 @@ import groovy.lang.Tuple7;
 import groovy.lang.Tuple8;
 import groovy.lang.Tuple9;
 import org.apache.groovy.util.Maps;
+import org.apache.groovy.util.concurrent.ManagedIdentityConcurrentMap;
 import org.codehaus.groovy.classgen.asm.util.TypeUtil;
 import org.codehaus.groovy.runtime.GeneratedClosure;
 import org.codehaus.groovy.runtime.GeneratedLambda;
 import org.codehaus.groovy.transform.stc.StaticTypeCheckingSupport;
 import org.codehaus.groovy.transform.trait.Traits;
-import org.codehaus.groovy.util.ManagedConcurrentMap;
-import org.codehaus.groovy.util.ReferenceBundle;
 import org.codehaus.groovy.vmplugin.VMPluginFactory;
 import org.objectweb.asm.Opcodes;
 
@@ -68,6 +67,7 @@ import java.math.BigInteger;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -141,10 +141,12 @@ public class ClassHelper {
 
             // uncached constants
             MAP_TYPE = makeWithoutCaching(Map.class),
+            SET_TYPE = makeWithoutCaching(Set.class),
             LIST_TYPE = makeWithoutCaching(List.class),
             Enum_Type = makeWithoutCaching(Enum.class),
             CLASS_Type = makeWithoutCaching(Class.class),
             TUPLE_TYPE = makeWithoutCaching(Tuple.class),
+            ITERABLE_TYPE = makeWithoutCaching(Iterable.class),
             REFERENCE_TYPE = makeWithoutCaching(Reference.class),
             COMPARABLE_TYPE = makeWithoutCaching(Comparable.class),
             GROOVY_OBJECT_TYPE = makeWithoutCaching(GroovyObject.class),
@@ -408,7 +410,7 @@ public class ClassHelper {
     }
 
     static class ClassHelperCache {
-        static ManagedConcurrentMap<Class, SoftReference<ClassNode>> classCache = new ManagedConcurrentMap<Class, SoftReference<ClassNode>>(ReferenceBundle.getWeakBundle());
+        static ManagedIdentityConcurrentMap<Class, SoftReference<ClassNode>> classCache = new ManagedIdentityConcurrentMap<>(128);
     }
 
     public static boolean isSAMType(final ClassNode type) {

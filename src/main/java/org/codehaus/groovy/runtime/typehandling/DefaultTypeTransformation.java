@@ -215,7 +215,7 @@ public class DefaultTypeTransformation {
     }
 
     public static Object castToType(Object object, Class type) {
-        if (object == null) return null;
+        if (object == null) return type == boolean.class ? Boolean.FALSE : null;
         if (type == Object.class) return object;
 
         final Class aClass = object.getClass();
@@ -244,20 +244,17 @@ public class DefaultTypeTransformation {
     }
 
     private static Object continueCastOnCollection(Object object, Class type) {
-        int modifiers = type.getModifiers();
-        Collection answer;
-        if (object instanceof Collection && type.isAssignableFrom(LinkedHashSet.class) &&
-                (type == LinkedHashSet.class || Modifier.isAbstract(modifiers) || Modifier.isInterface(modifiers))) {
+        if (object instanceof Collection && type.isAssignableFrom(LinkedHashSet.class)) {
             return new LinkedHashSet((Collection) object);
         }
+
         if (object.getClass().isArray()) {
-            if (type.isAssignableFrom(ArrayList.class) && (Modifier.isAbstract(modifiers) || Modifier.isInterface(modifiers))) {
+            Collection answer;
+            if (type.isAssignableFrom(ArrayList.class) && Modifier.isAbstract(type.getModifiers())) {
                 answer = new ArrayList();
-            } else if (type.isAssignableFrom(LinkedHashSet.class) && (Modifier.isAbstract(modifiers) || Modifier.isInterface(modifiers))) {
+            } else if (type.isAssignableFrom(LinkedHashSet.class) && Modifier.isAbstract(type.getModifiers())) {
                 answer = new LinkedHashSet();
             } else {
-                // let's call the collections constructor
-                // passing in the list wrapper
                 try {
                     answer = (Collection) type.getDeclaredConstructor().newInstance();
                 } catch (Exception e) {
@@ -267,9 +264,8 @@ public class DefaultTypeTransformation {
 
             // we cannot just wrap in a List as we support primitive type arrays
             int length = Array.getLength(object);
-            for (int i = 0; i < length; i++) {
-                Object element = Array.get(object, i);
-                answer.add(element);
+            for (int i = 0; i < length; i += 1) {
+                answer.add(Array.get(object, i));
             }
             return answer;
         }
@@ -309,20 +305,10 @@ public class DefaultTypeTransformation {
                 return answer;
             }
             if (type == BigDecimal.class) {
-                if (n instanceof Float || n instanceof Double) {
-                    return new BigDecimal(n.doubleValue());
-                }
-                return new BigDecimal(n.toString());
+                return NumberMath.toBigDecimal(n);
             }
             if (type == BigInteger.class) {
-                if (object instanceof Float || object instanceof Double) {
-                    BigDecimal bd = new BigDecimal(n.doubleValue());
-                    return bd.toBigInteger();
-                }
-                if (object instanceof BigDecimal) {
-                    return ((BigDecimal) object).toBigInteger();
-                }
-                return new BigInteger(n.toString());
+                return NumberMath.toBigInteger(n);
             }
         }
 
@@ -589,12 +575,12 @@ public class DefaultTypeTransformation {
                     || (right.getClass() != Object.class && right.getClass().isAssignableFrom(left.getClass()) //GROOVY-4046
                     || right instanceof Comparable) // GROOVY-7954
             ) {
-                Comparable comparable = (Comparable) left;
                 // GROOVY-7876: when comparing for equality we try to only call compareTo when an assignable
                 // relationship holds but with a container/holder class and because of erasure, we might still end
                 // up with the prospect of a ClassCastException which we want to ignore but only if testing equality
                 try {
-                    return comparable.compareTo(right);
+                    // GROOVY-9711: don't rely on Java method selection
+                    return (int) InvokerHelper.invokeMethod(left, "compareTo", right);
                 } catch (ClassCastException cce) {
                     if (!equalityCheckOnly) cause = cce;
                 }

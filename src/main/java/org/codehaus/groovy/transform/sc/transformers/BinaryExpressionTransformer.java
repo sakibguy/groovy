@@ -46,6 +46,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
+import static org.apache.groovy.ast.tools.ExpressionUtils.isNullConstant;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.args;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.binX;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.boolX;
@@ -55,7 +56,6 @@ import static org.codehaus.groovy.ast.tools.GeneralUtils.constX;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.nullX;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.ternaryX;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.varX;
-import static org.codehaus.groovy.classgen.AsmClassGenerator.isNullConstant;
 
 public class BinaryExpressionTransformer {
     private static final MethodNode COMPARE_TO_METHOD = ClassHelper.COMPARABLE_TYPE.getMethods("compareTo").get(0);
@@ -98,15 +98,37 @@ public class BinaryExpressionTransformer {
                 }
             }
         }
-        if (operationType == Types.EQUAL && leftExpression instanceof PropertyExpression) {
+        if (operationType == Types.ASSIGN) {
             MethodNode directMCT = leftExpression.getNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET);
             if (directMCT != null) {
-                PropertyExpression left = (PropertyExpression) leftExpression;
+                Expression left = staticCompilationTransformer.transform(leftExpression);
                 Expression right = staticCompilationTransformer.transform(rightExpression);
-                return transformPropertyAssignmentToSetterCall(left, right, directMCT);
+                if (left instanceof PropertyExpression) {
+                    // transform "a.x = val" into "def tmp = val; a.setX(tmp); tmp"
+                    PropertyExpression pe = (PropertyExpression) left;
+                    return transformAssignmentToSetterCall(
+                            pe.getObjectExpression(), // "a"
+                            directMCT, // "setX"
+                            right, // "val"
+                            false,
+                            pe.isSafe(),
+                            pe.getProperty(), // "x"
+                            bin // "a.x = val"
+                    );
+                } else if (left instanceof VariableExpression) {
+                    // transform "x = val" into "def tmp = val; this.setX(tmp); tmp"
+                    return transformAssignmentToSetterCall(
+                            varX("this"),
+                            directMCT, // "setX"
+                            right, // "val"
+                            true,
+                            false,
+                            left, // "x"
+                            bin // "x = val"
+                    );
+                }
             }
-        }
-        if (operationType == Types.COMPARE_EQUAL || operationType == Types.COMPARE_NOT_EQUAL) {
+        } else if (operationType == Types.COMPARE_EQUAL || operationType == Types.COMPARE_NOT_EQUAL) {
             // let's check if one of the operands is the null constant
             CompareToNullExpression compareToNullExpression = null;
             if (isNullConstant(leftExpression)) {
@@ -127,8 +149,8 @@ public class BinaryExpressionTransformer {
             Expression right = staticCompilationTransformer.transform(rightExpression);
 
             if (operationType == Types.COMPARE_TO
-                    && findType(leftExpression).implementsInterface(ClassHelper.COMPARABLE_TYPE)
-                    && findType(rightExpression).implementsInterface(ClassHelper.COMPARABLE_TYPE)) {
+                    && findType(left).implementsInterface(ClassHelper.COMPARABLE_TYPE)
+                    && findType(right).implementsInterface(ClassHelper.COMPARABLE_TYPE)) {
                 call = callX(left, "compareTo", args(right));
                 call.setImplicitThis(false);
                 call.setMethodTarget(COMPARE_TO_METHOD);
@@ -161,10 +183,11 @@ public class BinaryExpressionTransformer {
                 return expr;
             }
 
-            BinaryExpression optimized = tryOptimizeCharComparison(left, right, bin);
+            Expression optimized = tryOptimizeCharComparison(left, right, bin);
             if (optimized != null) {
                 optimized.removeNodeMetaData(StaticCompilationMetadataKeys.BINARY_EXP_TARGET);
-                return transformBinaryExpression(optimized);
+                optimized.removeNodeMetaData(StaticTypesMarker.DIRECT_METHOD_CALL_TARGET);
+                return optimized;
             }
 
             String name = (String) list[1];
@@ -174,7 +197,7 @@ public class BinaryExpressionTransformer {
             MethodNode adapter = StaticCompilationTransformer.BYTECODE_BINARY_ADAPTERS.get(operationType);
             if (adapter != null) {
                 Expression sba = classX(StaticCompilationTransformer.BYTECODE_ADAPTER_CLASS);
-                call = callX(sba, "compareEquals", args(expr, right));
+                call = callX(sba, adapter.getName(), args(expr, right));
                 call.setMethodTarget(adapter);
             } else {
                 call = callX(expr, name, args(right));
@@ -187,11 +210,11 @@ public class BinaryExpressionTransformer {
             }
             // case of +=, -=, /=, ...
             // the method represents the operation type only, and we must add an assignment
-            expr = binX(left, Token.newSymbol(Types.EQUAL, operation.getStartLine(), operation.getStartColumn()), call);
+            expr = binX(left, Token.newSymbol(Types.ASSIGN, operation.getStartLine(), operation.getStartColumn()), call);
             expr.setSourcePosition(bin);
             return expr;
         }
-        if (operationType == Types.EQUAL && leftExpression instanceof TupleExpression && rightExpression instanceof ListExpression) {
+        if (operationType == Types.ASSIGN && leftExpression instanceof TupleExpression && rightExpression instanceof ListExpression) {
             // multiple assignment
             ListOfExpressionsExpression cle = new ListOfExpressionsExpression();
             boolean isDeclaration = (bin instanceof DeclarationExpression);
@@ -254,8 +277,10 @@ public class BinaryExpressionTransformer {
             Character cRight = tryCharConstant(right);
             if (cLeft != null || cRight != null) {
                 Expression oLeft = (cLeft == null ? left : constX(cLeft, true));
+                if (oLeft instanceof PropertyExpression && !hasCharType((PropertyExpression)oLeft)) return null;
                 oLeft.setSourcePosition(left);
                 Expression oRight = (cRight == null ? right : constX(cRight, true));
+                if (oRight instanceof PropertyExpression && !hasCharType((PropertyExpression)oRight)) return null;
                 oRight.setSourcePosition(right);
                 bin.setLeftExpression(oLeft);
                 bin.setRightExpression(oRight);
@@ -263,6 +288,11 @@ public class BinaryExpressionTransformer {
             }
         }
         return null;
+    }
+
+    private static boolean hasCharType(PropertyExpression pe) {
+        ClassNode inferredType = pe.getNodeMetaData(StaticTypesMarker.INFERRED_RETURN_TYPE);
+        return inferredType != null && ClassHelper.Character_TYPE.equals(ClassHelper.getWrapper(inferredType));
     }
 
     private static Character tryCharConstant(final Expression expr) {
@@ -347,17 +377,30 @@ public class BinaryExpressionTransformer {
         throw new IllegalArgumentException("Unsupported conversion");
     }
 
-    private static Expression transformPropertyAssignmentToSetterCall(final PropertyExpression leftExpression, final Expression rightExpression, final MethodNode directMCT) {
-        // transform "a.x = b" into "def tmp = b; a.setX(tmp); tmp"
+    /**
+     * Adapter for {@link StaticPropertyAccessHelper#transformToSetterCall}.
+     */
+    private static Expression transformAssignmentToSetterCall(
+            final Expression receiver,
+            final MethodNode setterMethod,
+            final Expression valueExpression,
+            final boolean implicitThis,
+            final boolean safeNavigation,
+            final Expression nameExpression,
+            final Expression binaryExpression) {
+        // expression that will transfer assignment and name positions
+        Expression pos = new PropertyExpression(null, nameExpression);
+        pos.setSourcePosition(binaryExpression);
+
         return StaticPropertyAccessHelper.transformToSetterCall(
-                leftExpression.getObjectExpression(),
-                directMCT,
-                rightExpression,
-                false,
-                leftExpression.isSafe(),
-                false,
-                true, // to be replaced with a proper test whether a return value should be used or not
-                leftExpression
+                receiver,
+                setterMethod,
+                valueExpression,
+                implicitThis,
+                safeNavigation,
+                false, // spreadSafe
+                true, // TODO: replace with a proper test whether a return value is required or not
+                pos
         );
     }
 }

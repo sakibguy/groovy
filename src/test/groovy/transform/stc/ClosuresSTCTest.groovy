@@ -70,25 +70,27 @@ class ClosuresSTCTest extends StaticTypeCheckingTestCase {
         ''', 'Closure argument types: [int, int] do not match with parameter types: [java.lang.String, int]'
     }
 
-    void testClosureReturnTypeInferrence() {
+    void testClosureReturnTypeInference1() {
         assertScript '''
             def closure = { int x, int y -> return x+y }
             int total = closure(2,3)
         '''
+    }
 
+    void testClosureReturnTypeInference2() {
         shouldFailWithMessages '''
             def closure = { int x, int y -> return x+y }
             int total = closure('2',3)
         ''', 'Closure argument types: [int, int] do not match with parameter types: [java.lang.String, int]'
     }
 
-    void testClosureReturnTypeInferrenceWithoutDef() {
+    void testClosureReturnTypeInference3() {
         assertScript '''
             int total = { int x, int y -> return x+y }(2,3)
         '''
     }
 
-    void testClosureReturnTypeInference() {
+    void testClosureReturnTypeInference4() {
         shouldFailWithMessages '''
             def cl = { int x ->
                 if (x==0) {
@@ -101,9 +103,17 @@ class ClosuresSTCTest extends StaticTypeCheckingTestCase {
         ''', 'Possible loss of precision from long to byte'
     }
 
-    void testClosureWithoutParam() {
+    // GROOVY-9907
+    void testClosureReturnTypeInference5() {
         assertScript '''
-            { -> println 'Hello' }()
+            Integer foo(x) {
+                if (x instanceof Integer) {
+                    def bar = { -> return x }
+                    return bar.call()
+                }
+                return 0
+            }
+            assert foo(1) == 1
         '''
     }
 
@@ -352,27 +362,87 @@ class ClosuresSTCTest extends StaticTypeCheckingTestCase {
         ''', 'Cannot find matching method'
     }
 
-    // GROOVY-6189
+    // GROOVY-6189, GROOVY-9852
     void testSAMsInMethodSelection() {
         // simple direct case
-        assertScript """
+        assertScript '''
             interface MySAM {
                 def someMethod()
             }
             def foo(MySAM sam) {sam.someMethod()}
             assert foo {1} == 1
-        """
+        '''
 
         // overloads with classes implemented by Closure
-        ["java.util.concurrent.Callable", "Object", "Closure", "GroovyObjectSupport", "Cloneable", "Runnable", "GroovyCallable", "Serializable", "GroovyObject"].each {
-            className ->
+        [
+            'groovy.lang.Closure'            : 'not',
+            'groovy.lang.GroovyCallable'     : 'not',
+            'groovy.lang.GroovyObject'       : 'not',
+            'groovy.lang.GroovyObjectSupport': 'not',
+
+            'java.lang.Object'               : 'sam',
+            'java.lang.Runnable'             : 'not',
+            'java.lang.Cloneable'            : 'not',
+            'java.io.Serializable'           : 'not',
+            'java.util.concurrent.Callable'  : 'not',
+        ].each { type, which ->
             assertScript """
                 interface MySAM {
                     def someMethod()
                 }
-                def foo(MySAM sam) {sam.someMethod()}
-                def foo($className x) {2}
-                assert foo {1} == 2
+                def foo($type ref) { 'not' }
+                def foo(MySAM sam) { sam.someMethod() }
+                assert foo { 'sam' } == '$which' : '$type'
+                assert foo(() -> 'sam') == '$which' : '$type'
+            """
+        }
+    }
+
+    void testSAMsInMethodSelection2() {
+        shouldFailWithMessages '''
+            interface One { void m() }
+            interface Two { void m() }
+            def foo(One one) { one.m() }
+            def foo(Two two) { two.m() }
+            foo {
+                print 'bar'
+            }
+        ''', 'Reference to method is ambiguous. Cannot choose between'
+
+        ['', 'x, y ->'].each { params ->
+            shouldFailWithMessages """
+                import java.util.function.Function
+                import java.util.function.Supplier
+                def foo(Function f) { f.apply(0) }
+                def foo(Supplier s) { s.get() }
+                foo { $params 'bar' }
+            """, 'Reference to method is ambiguous. Cannot choose between'
+        }
+    }
+
+    // GROOVY-9881
+    void testSAMsInMethodSelection3() {
+        // Closure implements both and Runnable is "closer"
+        assertScript '''
+            import java.util.concurrent.Callable
+            def foo(Callable c) { 'call' }
+            def foo(Runnable r) { 'run'  }
+            def which = foo {
+                print 'bar'
+            }
+            assert which == 'run'
+        '''
+
+        ['->', 'x ->'].each { params ->
+            assertScript """
+                import java.util.function.Function
+                import java.util.function.Supplier
+                def foo(Function f) { f.apply(0) }
+                def foo(Supplier s) { s.get() }
+                def ret = foo { $params
+                    'bar'
+                }
+                assert ret == 'bar'
             """
         }
     }
@@ -480,18 +550,6 @@ class ClosuresSTCTest extends StaticTypeCheckingTestCase {
         '''
     }
 
-    void testAmbiguousSAMOverload() {
-        shouldFailWithMessages '''
-            interface Sammy { def sammy() }
-            interface Sam { def sam() }
-            def method(Sam sam) { sam.sam() }
-            def method(Sammy sammy) { sammy.sammy() }
-            method {
-                println 'foo'
-            }
-        ''', 'Reference to method is ambiguous. Cannot choose between'
-    }
-
     void testSAMType() {
         assertScript """
             interface Foo {int foo()}
@@ -591,5 +649,37 @@ class ClosuresSTCTest extends StaticTypeCheckingTestCase {
                 optimizationOptions.indy = true
             }
         '''
+    }
+
+    // GROOVY-9652
+    void testDelegatePropertyAndCharCompareOptimization() {
+        ['String', 'Character', 'char'].each { type ->
+            assertScript """
+                class Node {
+                    String name
+                    ${type} text
+                }
+                class Root implements Iterable<Node> {
+                    @Override
+                    Iterator<Node> iterator() {
+                        return [
+                            new Node(name: 'term', text: (${type}) 'a'),
+                            new Node(name: 'dash', text: (${type}) '-'),
+                            new Node(name: 'term', text: (${type}) 'b')
+                        ].iterator()
+                    }
+                }
+
+                void test() {
+                    Root root = new Root()
+                    root[0].with {
+                        assert name == 'term'
+                        assert text == 'a' // GroovyCastException: Cannot cast object 'script@b91d8c4' with class 'script' to class 'bugs.Node'
+                    }
+                }
+
+                test()
+            """
+        }
     }
 }

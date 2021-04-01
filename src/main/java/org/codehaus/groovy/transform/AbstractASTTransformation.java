@@ -39,7 +39,6 @@ import org.codehaus.groovy.ast.tools.GeneralUtils;
 import org.codehaus.groovy.ast.tools.GenericsUtils;
 import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.runtime.StringGroovyMethods;
-import org.objectweb.asm.Opcodes;
 
 import java.lang.annotation.Retention;
 import java.util.ArrayList;
@@ -53,7 +52,7 @@ import static groovy.transform.Undefined.isUndefined;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.getInstanceNonPropertyFieldNames;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.getSuperNonPropertyFields;
 
-public abstract class AbstractASTTransformation implements Opcodes, ASTTransformation, ErrorCollecting {
+public abstract class AbstractASTTransformation implements ASTTransformation, ErrorCollecting {
     public static final ClassNode RETENTION_CLASSNODE = ClassHelper.makeWithoutCaching(Retention.class);
 
     protected SourceUnit sourceUnit;
@@ -224,6 +223,7 @@ public abstract class AbstractASTTransformation implements Opcodes, ASTTransform
         return list;
     }
 
+    @Override
     public void addError(String msg, ASTNode expr) {
         sourceUnit.getErrorCollector().addErrorAndContinue(msg + '\n', expr, sourceUnit);
     }

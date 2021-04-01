@@ -46,7 +46,6 @@ options {
     import java.util.HashSet;
     import java.util.Collections;
     import java.util.Arrays;
-    import java.util.stream.IntStream;
     import java.util.logging.Logger;
     import java.util.logging.Level;
     import java.util.EmptyStackException;
@@ -56,9 +55,10 @@ options {
 
 @members {
     private static final Logger LOGGER = Logger.getLogger(GroovyLexer.class.getName());
-    private long tokenIndex     = 0;
-    private int  lastTokenType  = 0;
-    private int  invalidDigitCount = 0;
+
+    private long tokenIndex;
+    private int  lastTokenType;
+    private int  invalidDigitCount;
 
     /**
      * Record the index and token type of the current token while emitting tokens.
@@ -79,18 +79,27 @@ options {
         super.emit(token);
     }
 
-    private static final int[] REGEX_CHECK_ARRAY =
-                                    IntStream.of(
-                                        Identifier, CapitalizedIdentifier, NullLiteral, BooleanLiteral, THIS, RPAREN, RBRACK, RBRACE,
-                                        IntegerLiteral, FloatingPointLiteral, StringLiteral, GStringEnd, INC, DEC
-                                    ).sorted().toArray();
+    private static final int[] REGEX_CHECK_ARRAY = {
+        DEC,
+        INC,
+        THIS,
+        RBRACE,
+        RBRACK,
+        RPAREN,
+        GStringEnd,
+        NullLiteral,
+        StringLiteral,
+        BooleanLiteral,
+        IntegerLiteral,
+        FloatingPointLiteral,
+        Identifier, CapitalizedIdentifier
+    };
+    static {
+        Arrays.sort(REGEX_CHECK_ARRAY);
+    }
 
     private boolean isRegexAllowed() {
-        if (Arrays.binarySearch(REGEX_CHECK_ARRAY, this.lastTokenType) >= 0) {
-            return false;
-        }
-
-        return true;
+        return (Arrays.binarySearch(REGEX_CHECK_ARRAY, this.lastTokenType) < 0);
     }
 
     /**
@@ -219,23 +228,28 @@ options {
 
         return Integer.MIN_VALUE;
     }
+
+    private static boolean isJavaIdentifierStartAndNotIdentifierIgnorable(int codePoint) {
+        return Character.isJavaIdentifierStart(codePoint) && !Character.isIdentifierIgnorable(codePoint);
+    }
+
+    private static boolean isJavaIdentifierPartAndNotIdentifierIgnorable(int codePoint) {
+        return Character.isJavaIdentifierPart(codePoint) && !Character.isIdentifierIgnorable(codePoint);
+    }
 }
 
 
 // §3.10.5 String Literals
 StringLiteral
-    :   GStringQuotationMark    DqStringCharacter* GStringQuotationMark
-    |   SqStringQuotationMark   SqStringCharacter* SqStringQuotationMark
+    :   GStringQuotationMark  DqStringCharacter*  GStringQuotationMark
+    |   SqStringQuotationMark  SqStringCharacter*  SqStringQuotationMark
+    |   Slash { this.isRegexAllowed() && _input.LA(1) != '*' }?  SlashyStringCharacter+  Slash
 
-    |   Slash      { this.isRegexAllowed() && _input.LA(1) != '*' }?
-                 SlashyStringCharacter+       Slash
-
-    |   TdqStringQuotationMark  TdqStringCharacter*    TdqStringQuotationMark
-    |   TsqStringQuotationMark  TsqStringCharacter*    TsqStringQuotationMark
-    |   DollarSlashyGStringQuotationMarkBegin   DollarSlashyStringCharacter+   DollarSlashyGStringQuotationMarkEnd
+    |   TdqStringQuotationMark  TdqStringCharacter*  TdqStringQuotationMark
+    |   TsqStringQuotationMark  TsqStringCharacter*  TsqStringQuotationMark
+    |   DollarSlashyGStringQuotationMarkBegin  DollarSlashyStringCharacter+  DollarSlashyGStringQuotationMarkEnd
     ;
 
-// Groovy gstring
 GStringBegin
     :   GStringQuotationMark DqStringCharacter* Dollar -> pushMode(DQ_GSTRING_MODE), pushMode(GSTRING_TYPE_SELECTOR_MODE)
     ;
@@ -874,7 +888,7 @@ ELVIS_ASSIGN    : '?=';
 
 // §3.8 Identifiers (must appear after all keywords in the grammar)
 CapitalizedIdentifier
-    :   [A-Z] JavaLetterOrDigit*
+    :   JavaLetter {Character.isUpperCase(_input.LA(-1))}? JavaLetterOrDigit*
     ;
 
 Identifier
@@ -891,7 +905,7 @@ JavaLetter
     :   [a-zA-Z$_] // these are the "java letters" below 0x7F
     |   // covers all characters above 0x7F which are not a surrogate
         ~[\u0000-\u007F\uD800-\uDBFF]
-        { Character.isJavaIdentifierStart(_input.LA(-1)) && !Character.isIdentifierIgnorable(_input.LA(-1)) }?
+        { isJavaIdentifierStartAndNotIdentifierIgnorable(_input.LA(-1)) }?
     |   // covers UTF-16 surrogate pairs encodings for U+10000 to U+10FFFF
         [\uD800-\uDBFF] [\uDC00-\uDFFF]
         { Character.isJavaIdentifierStart(Character.toCodePoint((char) _input.LA(-2), (char) _input.LA(-1))) }?
@@ -907,7 +921,7 @@ JavaLetterOrDigit
     :   [a-zA-Z0-9$_] // these are the "java letters or digits" below 0x7F
     |   // covers all characters above 0x7F which are not a surrogate
         ~[\u0000-\u007F\uD800-\uDBFF]
-        { Character.isJavaIdentifierPart(_input.LA(-1)) && !Character.isIdentifierIgnorable(_input.LA(-1)) }?
+        { isJavaIdentifierPartAndNotIdentifierIgnorable(_input.LA(-1)) }?
     |   // covers UTF-16 surrogate pairs encodings for U+10000 to U+10FFFF
         [\uD800-\uDBFF] [\uDC00-\uDFFF]
         { Character.isJavaIdentifierPart(Character.toCodePoint((char) _input.LA(-2), (char) _input.LA(-1))) }?

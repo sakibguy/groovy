@@ -45,7 +45,71 @@ final class Groovy9126 extends AbstractBytecodeTestCase {
                  'IMUL',
                  'IRETURN',
                  'L1',
-                 'FRAME FULL [] [java/lang/Throwable]']
+                 'LOCALVARIABLE this Lscript; L0 L1 0']
+        )
+    }
+
+    @Test
+    void testUnreachableBytecode2() {
+        def bytecode = compile([method:'nonVoidMethod'],'''
+            @groovy.transform.CompileStatic
+            def nonVoidMethod() {
+                println 123
+                567
+            }
+        ''')
+
+        assert bytecode.hasStrictSequence(
+                ['public nonVoidMethod()Ljava/lang/Object;',
+                 'L0',
+                 'LINENUMBER 4 L0',
+                 'ALOAD 0',
+                 'CHECKCAST script',
+                 'BIPUSH 123',
+                 'INVOKESTATIC java/lang/Integer.valueOf (I)Ljava/lang/Integer;',
+                 'INVOKEVIRTUAL script.println (Ljava/lang/Object;)V',
+                 'ACONST_NULL',
+                 'POP',
+                 'L1',
+                 'LINENUMBER 5 L1',
+                 'SIPUSH 567',
+                 'INVOKESTATIC java/lang/Integer.valueOf (I)Ljava/lang/Integer;',
+                 'ARETURN',
+                 'L2',
+                 'LOCALVARIABLE this Lscript; L0 L2 0']
+        )
+    }
+
+    @Test
+    void testUnreachableBytecode3() {
+        def bytecode = compile([method:'nonVoidMethod'],'''
+            @groovy.transform.CompileStatic
+            def nonVoidMethod() {
+                println 123
+                throw new RuntimeException()
+            }
+        ''')
+
+        assert bytecode.hasStrictSequence(
+                ['public nonVoidMethod()Ljava/lang/Object;',
+                 'L0',
+                 'LINENUMBER 4 L0',
+                 'ALOAD 0',
+                 'CHECKCAST script',
+                 'BIPUSH 123',
+                 'INVOKESTATIC java/lang/Integer.valueOf (I)Ljava/lang/Integer;',
+                 'INVOKEVIRTUAL script.println (Ljava/lang/Object;)V',
+                 'ACONST_NULL',
+                 'POP',
+                 'L1',
+                 'LINENUMBER 5 L1',
+                 'NEW java/lang/RuntimeException',
+                 'DUP',
+                 'INVOKESPECIAL java/lang/RuntimeException.<init> ()V',
+                 'CHECKCAST java/lang/Throwable',
+                 'ATHROW',
+                 'L2',
+                 'LOCALVARIABLE this Lscript; L0 L2 0']
         )
     }
 }

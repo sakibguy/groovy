@@ -47,7 +47,7 @@ import static org.codehaus.groovy.syntax.Types.POWER;
 import static org.codehaus.groovy.syntax.Types.RIGHT_SHIFT;
 import static org.codehaus.groovy.syntax.Types.RIGHT_SHIFT_UNSIGNED;
 
-public class ExpressionUtils {
+public final class ExpressionUtils {
 
     // NOTE: values are sorted in ascending order
     private static final int[] HANDLED_TYPES = {
@@ -59,8 +59,7 @@ public class ExpressionUtils {
         Arrays.sort(HANDLED_TYPES);
     }
 
-    private ExpressionUtils() {
-    }
+    private ExpressionUtils() { }
 
     /**
      * Turns expressions of the form ConstantExpression(40) + ConstantExpression(2)
@@ -310,8 +309,15 @@ public class ExpressionUtils {
             }
         } else if (exp instanceof BinaryExpression) {
             BinaryExpression be = (BinaryExpression) exp;
-            be.setLeftExpression(transformInlineConstants(be.getLeftExpression()));
-            be.setRightExpression(transformInlineConstants(be.getRightExpression()));
+            Expression lhs = transformInlineConstants(be.getLeftExpression());
+            Expression rhs = transformInlineConstants(be.getRightExpression());
+            if (be.getOperation().getType() == PLUS && lhs instanceof ConstantExpression && rhs instanceof ConstantExpression &&
+                    lhs.getType().equals(ClassHelper.STRING_TYPE) && rhs.getType().equals(ClassHelper.STRING_TYPE)) {
+                // GROOVY-9855: inline string concat
+                return configure(be, new ConstantExpression(lhs.getText() + rhs.getText()));
+            }
+            be.setLeftExpression(lhs);
+            be.setRightExpression(rhs);
             return be;
         } else if (exp instanceof ListExpression) {
             ListExpression origList = (ListExpression) exp;
@@ -338,5 +344,21 @@ public class ExpressionUtils {
             return fn.getInitialValueExpression();
         }
         return null;
+    }
+
+    public static boolean isNullConstant(final Expression expression) {
+        return expression instanceof ConstantExpression && ((ConstantExpression) expression).isNullExpression();
+    }
+
+    public static boolean isThisExpression(final Expression expression) {
+        return expression instanceof VariableExpression && ((VariableExpression) expression).isThisExpression();
+    }
+
+    public static boolean isSuperExpression(final Expression expression) {
+        return expression instanceof VariableExpression && ((VariableExpression) expression).isSuperExpression();
+    }
+
+    public static boolean isThisOrSuper(final Expression expression) {
+        return isThisExpression(expression) || isSuperExpression(expression);
     }
 }

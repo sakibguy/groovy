@@ -42,6 +42,8 @@ import static org.codehaus.groovy.ast.tools.GeneralUtils.indexX;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.params;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.stmt;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.varX;
+import static org.objectweb.asm.Opcodes.ACC_PUBLIC;
+import static org.objectweb.asm.Opcodes.ACC_STATIC;
 
 /**
  * Handles generation of code for the {@code @}IndexedProperty annotation.
@@ -54,6 +56,7 @@ public class IndexedPropertyASTTransformation extends AbstractASTTransformation 
     private static final String MY_TYPE_NAME = "@" + MY_TYPE.getNameWithoutPackage();
     private static final ClassNode LIST_TYPE = makeWithoutCaching(List.class, false);
 
+    @Override
     public void visit(ASTNode[] nodes, SourceUnit source) {
         init(nodes, source);
         AnnotatedNode parent = (AnnotatedNode) nodes[1];

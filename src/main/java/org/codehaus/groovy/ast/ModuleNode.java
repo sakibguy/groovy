@@ -25,7 +25,6 @@ import org.codehaus.groovy.classgen.GeneratorContext;
 import org.codehaus.groovy.control.SourceUnit;
 import org.codehaus.groovy.runtime.InvokerHelper;
 import org.codehaus.groovy.transform.BaseScriptASTTransformation;
-import org.objectweb.asm.Opcodes;
 
 import java.io.File;
 import java.net.URI;
@@ -47,13 +46,18 @@ import static org.codehaus.groovy.ast.tools.GeneralUtils.param;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.params;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.stmt;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.varX;
+import static org.objectweb.asm.Opcodes.ACC_ABSTRACT;
+import static org.objectweb.asm.Opcodes.ACC_FINAL;
+import static org.objectweb.asm.Opcodes.ACC_INTERFACE;
+import static org.objectweb.asm.Opcodes.ACC_PUBLIC;
+import static org.objectweb.asm.Opcodes.ACC_STATIC;
 
 /**
  * Represents a module, which consists typically of a class declaration
  * but could include some imports, some statements and multiple classes
  * intermixed with statements like scripts in Python or Ruby
  */
-public class ModuleNode extends ASTNode implements Opcodes {
+public class ModuleNode extends ASTNode {
 
     private List<ClassNode> classes = new LinkedList<>();
     private final List<MethodNode> methods = new ArrayList<>();
@@ -91,24 +95,39 @@ public class ModuleNode extends ASTNode implements Opcodes {
         return /*Collections.unmodifiableList(*/classes/*)*/; // modified by MacroClassTransform
     }
 
+    /**
+     * @return the module's methods
+     */
     public List<MethodNode> getMethods() {
-        return Collections.unmodifiableList(methods);
+        return methods;
     }
 
+    /**
+     * @return a copy of the module's imports
+     */
     public List<ImportNode> getImports() {
-        return Collections.unmodifiableList(imports);
+        return new ArrayList<>(imports);
     }
 
+    /**
+     * @return the module's star imports
+     */
     public List<ImportNode> getStarImports() {
-        return Collections.unmodifiableList(starImports);
+        return starImports;
     }
 
+    /**
+     * @return the module's static imports
+     */
     public Map<String, ImportNode> getStaticImports() {
-        return Collections.unmodifiableMap(staticImports);
+        return staticImports;
     }
 
+    /**
+     * @return the module's static star imports
+     */
     public Map<String, ImportNode> getStaticStarImports() {
-        return Collections.unmodifiableMap(staticStarImports);
+        return staticStarImports;
     }
 
     /**
@@ -311,25 +330,30 @@ public class ModuleNode extends ASTNode implements Opcodes {
         }
     }
 
+    private static Parameter[] finalParam(final ClassNode type, final String name) {
+        Parameter parameter = param(type, name);
+        parameter.setModifiers(ACC_FINAL);
+        return params(parameter);
+    }
+
     protected ClassNode createStatementsClass() {
         ClassNode classNode = getScriptClassDummy();
         if (classNode.getName().endsWith("package-info")) {
             return classNode;
         }
 
-        handleMainMethodIfPresent(methods);
+        MethodNode existingMain = handleMainMethodIfPresent(methods);
 
-        // return new Foo(new ShellContext(args)).run()
         classNode.addMethod(
             new MethodNode(
                 "main",
                 ACC_PUBLIC | ACC_STATIC,
                 ClassHelper.VOID_TYPE,
-                params(param(ClassHelper.STRING_TYPE.makeArray(), "args")),
+                finalParam(ClassHelper.STRING_TYPE.makeArray(), "args"),
                 ClassNode.EMPTY_ARRAY,
                 stmt(
                     callX(
-                        classX(ClassHelper.make(InvokerHelper.class)),
+                        ClassHelper.make(InvokerHelper.class),
                         "runScript",
                         args(classX(classNode), varX("args"))
                     )
@@ -339,12 +363,15 @@ public class ModuleNode extends ASTNode implements Opcodes {
 
         MethodNode methodNode = new MethodNode("run", ACC_PUBLIC, ClassHelper.OBJECT_TYPE, Parameter.EMPTY_ARRAY, ClassNode.EMPTY_ARRAY, statementBlock);
         methodNode.setIsScriptBody();
+        if (existingMain != null) {
+            methodNode.addAnnotations(existingMain.getAnnotations());
+        }
         classNode.addMethod(methodNode);
 
         classNode.addConstructor(ACC_PUBLIC, Parameter.EMPTY_ARRAY, ClassNode.EMPTY_ARRAY, new BlockStatement());
 
         Statement stmt;
-        // A script's contextual constructor should call it's super class' contextual constructor, if it has one.
+        // A script's contextual constructor should call its super class' contextual constructor, if it has one.
         // In practice this will always be true because currently this visitor is run before the AST transformations
         // (like @BaseScript) that could change this.  But this is cautious and anticipates possible compiler changes.
         if (classNode.getSuperClass().getDeclaredConstructor(params(param(ClassHelper.BINDING_TYPE, "context"))) != null) {
@@ -356,7 +383,7 @@ public class ModuleNode extends ASTNode implements Opcodes {
 
         classNode.addConstructor(
             ACC_PUBLIC,
-            params(param(ClassHelper.make(Binding.class), "context")),
+            finalParam(ClassHelper.make(Binding.class), "context"),
             ClassNode.EMPTY_ARRAY,
             stmt);
 
@@ -373,9 +400,10 @@ public class ModuleNode extends ASTNode implements Opcodes {
     /*
      * If a main method is provided by user, account for it under run() as scripts generate their own 'main' so they can run.
      */
-    private void handleMainMethodIfPresent(final List<MethodNode> methods) {
+    private MethodNode handleMainMethodIfPresent(final List<MethodNode> methods) {
         boolean found = false;
-        for (Iterator<MethodNode> iter = methods.iterator(); iter.hasNext();) {
+        MethodNode result = null;
+        for (Iterator<MethodNode> iter = methods.iterator(); iter.hasNext(); ) {
             MethodNode node = iter.next();
             if (node.getName().equals("main")) {
                 if (node.isStatic() && node.getParameters().length == 1) {
@@ -385,12 +413,12 @@ public class ModuleNode extends ASTNode implements Opcodes {
 
                     argTypeMatches = (argType.equals(ClassHelper.OBJECT_TYPE) || argType.getName().contains("String[]"));
                     retTypeMatches = (retType == ClassHelper.VOID_TYPE || retType == ClassHelper.OBJECT_TYPE);
-
                     if (retTypeMatches && argTypeMatches) {
                         if (found) {
                             throw new RuntimeException("Repetitive main method found.");
                         } else {
                             found = true;
+                            result = node;
                         }
                         // if script has both loose statements as well as main(), then main() is ignored
                         if (statementBlock.isEmpty()) {
@@ -401,6 +429,7 @@ public class ModuleNode extends ASTNode implements Opcodes {
                 }
             }
         }
+        return result;
     }
 
     protected String extractClassFromFileDescription() {

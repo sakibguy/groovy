@@ -62,6 +62,7 @@ import static org.apache.groovy.ast.tools.ClassNodeUtils.isValidAccessorName;
 import static org.apache.groovy.ast.tools.ExpressionUtils.transformInlineConstants;
 import static org.apache.groovy.util.BeanUtils.capitalize;
 import static org.codehaus.groovy.ast.tools.ClosureUtils.getParametersSafe;
+import static org.codehaus.groovy.ast.tools.GeneralUtils.getGetterName;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.getSetterName;
 
 /**
@@ -109,6 +110,7 @@ public class StaticImportVisitor extends ClassCodeExpressionTransformer {
         inAnnotation = oldInAnnotation;
     }
 
+    @Override
     public Expression transform(Expression exp) {
         if (exp == null) return null;
         Class<? extends Expression> clazz = exp.getClass();
@@ -132,14 +134,14 @@ public class StaticImportVisitor extends ClassCodeExpressionTransformer {
         }
         if (clazz == ArgumentListExpression.class) {
             Expression result = exp.transformExpression(this);
-            if (inPropertyExpression) {
+            if (foundArgs == null && inPropertyExpression) {
                 foundArgs = result;
             }
             return result;
         }
         if (exp instanceof ConstantExpression) {
             Expression result = exp.transformExpression(this);
-            if (inPropertyExpression) {
+            if (foundConstant == null && inPropertyExpression) {
                 foundConstant = result;
             }
             if (inAnnotation && exp instanceof AnnotationConstantExpression) {
@@ -281,21 +283,25 @@ public class StaticImportVisitor extends ClassCodeExpressionTransformer {
                 return false;
             };
 
-            if (isInnerClass(currentClass)) {
-                if (mce.isImplicitThis() && !inClosure && inSpecialConstructorCall && !foundInstanceMethod) {
-                    if (currentClass.getOuterClass().hasPossibleMethod(methodName, args)) {
-                        object = new PropertyExpression(new ClassExpression(currentClass.getOuterClass()), new ConstantExpression("this"));
-                    } else if (hasPossibleStaticMember.test(currentClass.getOuterClass())) {
-                        Expression result = new StaticMethodCallExpression(currentClass.getOuterClass(), methodName, args);
+            if (mce.isImplicitThis()) {
+                if (isInnerClass(currentClass)) {
+                    if (inSpecialConstructorCall && !foundInstanceMethod) {
+                        // check for reference to outer class method in this(...) or super(...)
+                        if (currentClass.getOuterClass().hasPossibleMethod(methodName, args)) {
+                            object = new PropertyExpression(new ClassExpression(currentClass.getOuterClass()), new ConstantExpression("this"));
+                        } else if (hasPossibleStaticMember.test(currentClass.getOuterClass())) {
+                            Expression result = new StaticMethodCallExpression(currentClass.getOuterClass(), methodName, args);
+                            result.setSourcePosition(mce);
+                            return result;
+                        }
+                    }
+                } else if (inSpecialConstructorCall || (!inClosure && !foundInstanceMethod && !methodName.equals("call"))) {
+                    // check for reference to static method in this(...) or super(...) or when call not resolved
+                    if (hasPossibleStaticMember.test(currentClass)) {
+                        Expression result = new StaticMethodCallExpression(currentClass, methodName, args);
                         result.setSourcePosition(mce);
                         return result;
                     }
-                }
-            } else if (inSpecialConstructorCall || (!foundInstanceMethod && !methodName.equals("call"))) {
-                if (hasPossibleStaticMember.test(currentClass)) {
-                    Expression result = new StaticMethodCallExpression(currentClass, methodName, args);
-                    result.setSourcePosition(mce);
-                    return result;
                 }
             }
         }
@@ -346,29 +352,28 @@ public class StaticImportVisitor extends ClassCodeExpressionTransformer {
     }
 
     protected Expression transformPropertyExpression(PropertyExpression pe) {
-        if (currentMethod!=null && currentMethod.isStatic()
+        if (currentMethod != null && currentMethod.isStatic()
                 && pe.getObjectExpression() instanceof VariableExpression
                 && ((VariableExpression) pe.getObjectExpression()).isSuperExpression()) {
             PropertyExpression pexp = new PropertyExpression(
-                    new ClassExpression(currentClass.getSuperClass()),
+                    new ClassExpression(currentClass.getUnresolvedSuperClass()),
                     transform(pe.getProperty())
             );
             pexp.setSourcePosition(pe);
             return pexp;
         }
-        boolean oldInPropertyExpression = inPropertyExpression;
-        Expression oldFoundArgs = foundArgs;
-        Expression oldFoundConstant = foundConstant;
-        inPropertyExpression = true;
-        foundArgs = null;
-        foundConstant = null;
-        Expression objectExpression = transform(pe.getObjectExpression());
-        boolean candidate = false;
-        if (objectExpression instanceof MethodCallExpression) {
-            candidate = ((MethodCallExpression)objectExpression).isImplicitThis();
-        }
 
-        if (foundArgs != null && foundConstant != null && candidate) {
+        boolean oldInPropertyExpression = inPropertyExpression;
+        Expression oldFoundConstant = foundConstant;
+        Expression oldFoundArgs = foundArgs;
+        inPropertyExpression = true;
+        foundConstant = null;
+        foundArgs = null;
+        Expression objectExpression = transform(pe.getObjectExpression());
+        if (foundArgs != null && foundConstant != null
+                && !foundConstant.getText().trim().isEmpty()
+                && objectExpression instanceof MethodCallExpression
+                && ((MethodCallExpression) objectExpression).isImplicitThis()) {
             Expression result = findStaticMethodImportFromModule(foundConstant, foundArgs);
             if (result != null) {
                 objectExpression = result;
@@ -376,8 +381,9 @@ public class StaticImportVisitor extends ClassCodeExpressionTransformer {
             }
         }
         inPropertyExpression = oldInPropertyExpression;
-        foundArgs = oldFoundArgs;
         foundConstant = oldFoundConstant;
+        foundArgs = oldFoundArgs;
+
         pe.setObjectExpression(objectExpression);
         return pe;
     }
@@ -504,7 +510,7 @@ public class StaticImportVisitor extends ClassCodeExpressionTransformer {
     }
 
     private String getAccessorName(String name) {
-        return inLeftExpression ? getSetterName(name) : "get" + capitalize(name);
+        return inLeftExpression ? getSetterName(name) : getGetterName(name);
     }
 
     private Expression findStaticPropertyAccessorGivenArgs(ClassNode staticImportType, String propName, Expression args) {

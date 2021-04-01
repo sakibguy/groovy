@@ -294,6 +294,58 @@ final class LambdaTest {
     }
 
     @Test
+    void testComparator1() {
+        assertScript '''
+            @groovy.transform.CompileStatic class T {
+                Comparator<Integer> c = (Integer a, Integer b) -> Integer.compare(a, b)
+            }
+            def t = new T()
+            assert t.c.compare(0,0) == 0
+        '''
+
+        def err = shouldFail '''
+            @groovy.transform.CompileStatic class T {
+                Comparator<Integer> c = (int a, int b) -> Integer.compare(a, b)
+            }
+        '''
+        assert err =~ /Cannot assign java.util.Comparator <int> to: java.util.Comparator <Integer>/
+    }
+
+    @Test // GROOVY-9977
+    void testComparator2() {
+        assertScript '''
+            @groovy.transform.CompileStatic
+            class T {
+                Comparator<Integer> c = (a, b) -> Integer.compare(a, b)
+
+                static void m1() {
+                    Comparator<Integer> x = (a, b) -> Integer.compare(a, b)
+                }
+                void m2() {
+                    Comparator<Integer> y = (a, b) -> Integer.compare(a, b)
+                }
+            }
+            def t = new T()
+            assert t.c.compare(0,0) == 0
+        '''
+    }
+
+    @Test // GROOVY-9997
+    void testComparator3() {
+        assertScript '''
+            @groovy.transform.TypeChecked
+            void test() {
+                def cast = (Comparator<Integer>) (a, b) -> Integer.compare(a, b)
+                assert cast.compare(0,0) == 0
+
+                def coerce = ((a, b) -> Integer.compare(a, b)) as Comparator<Integer>
+                assert coerce.compare(0,0) == 0
+            }
+            test()
+        '''
+    }
+
+    @Test
     void testFunctionWithLocalVariables() {
         assertScript '''
             import groovy.transform.CompileStatic
@@ -336,6 +388,7 @@ final class LambdaTest {
         '''
     }
 
+    @Test
     void testFunctionWithLocalVariables4() {
         assertScript '''
             import groovy.transform.CompileStatic
@@ -830,6 +883,36 @@ final class LambdaTest {
             abstract class SamCallable {
                 abstract int call(int p);
             }
+        '''
+    }
+
+    @Test // GROOVY-9881
+    void testFunctionalInterface4() {
+        assertScript '''
+            import java.util.function.*
+
+            class Value<V> {
+                final V val
+                Value(V v) {
+                    this.val = v
+                }
+                String toString() {
+                    val as String
+                }
+                def <T> Value<T> replace(Supplier<T> supplier) {
+                    new Value<>(supplier.get())
+                }
+                def <T> Value<T> replace(Function<? super V, ? extends T> function) {
+                    new Value(function.apply(val))
+                }
+            }
+
+            @groovy.transform.CompileStatic
+            void test() {
+                assert new Value(123).replace(() -> 'foo').toString() == 'foo'
+                assert new Value(123).replace((Integer v) -> 'bar').toString() == 'bar'
+            }
+            test()
         '''
     }
 
@@ -1809,6 +1892,17 @@ final class LambdaTest {
             new ByteArrayInputStream(serializedLambdaBytes3).withObjectInputStream(Test1.class.classLoader) {
                 SerializableFunction<Integer, String> f = (SerializableFunction<Integer, String>) it.readObject()
                 assert 'cn1' == f.apply(1)
+            }
+        '''
+    }
+
+    @Test // GROOVY-9146
+    void testScriptWithExistingMainCS() {
+        assertScript '''
+            @groovy.transform.CompileStatic
+            static void main(args) {
+                java.util.function.Function<String, String> lower = String::toLowerCase
+                assert lower.toString().contains('$$Lambda$')
             }
         '''
     }

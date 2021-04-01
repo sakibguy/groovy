@@ -18,7 +18,6 @@
  */
 package groovy.transform.stc
 
-
 /**
  * Unit tests for static type checking : arrays and collections.
  */
@@ -41,6 +40,12 @@ class ArraysAndCollectionsSTCTest extends StaticTypeCheckingTestCase {
     void testWrongComponentTypeInArray() {
         shouldFailWithMessages '''
             int[] intArray = ['a']
+        ''', 'Cannot assign value of type java.lang.String into array of type int[]'
+    }
+
+    void testWrongComponentTypeInArrayInitializer() {
+        shouldFailWithMessages '''
+            int[] intArray = new int[]{'a'}
         ''', 'Cannot assign value of type java.lang.String into array of type int[]'
     }
 
@@ -201,7 +206,6 @@ class ArraysAndCollectionsSTCTest extends StaticTypeCheckingTestCase {
     }
 
     void testInlineMap() {
-
         assertScript '''
             Map map = [a:1, b:2]
         '''
@@ -313,7 +317,7 @@ class ArraysAndCollectionsSTCTest extends StaticTypeCheckingTestCase {
         shouldFailWithMessages '''
             class Foo {
                 def say() {
-                    FooAnother foo1 = new Foo[13] // but FooAnother foo1 = new Foo() reports a STC                        Error
+                    FooAnother foo1 = new Foo[13] // but FooAnother foo1 = new Foo() reports a STC error
                 }
             }
             class FooAnother {
@@ -586,5 +590,170 @@ class ArraysAndCollectionsSTCTest extends StaticTypeCheckingTestCase {
             }
             assert meth().toSet() == ['pls', 'bar'].toSet()
         '''
+    }
+
+    void testAbstractTypeInitializedByListLiteral() {
+        shouldFailWithMessages '''
+            abstract class A {
+                A(int n) {}
+            }
+            A a = [1]
+        ''', 'Cannot assign value of type java.util.List <java.lang.Integer> to variable of type A'
+    }
+
+    // GROOVY-6912
+    void testArrayListTypeInitializedByListLiteral() {
+        assertScript '''
+            ArrayList list = [1,2,3]
+            assert list.size() == 3
+            assert list.last() == 3
+        '''
+
+        assertScript '''
+            ArrayList list = [[1,2,3]]
+            assert list.size() == 1
+        '''
+
+        assertScript '''
+            ArrayList<Integer> list = [1,2,3]
+            assert list.size() == 3
+            assert list.last() == 3
+        '''
+
+        shouldFailWithMessages '''
+            ArrayList<String> strings = [1,2,3]
+        ''', 'Incompatible generic argument types. Cannot assign java.util.ArrayList <java.lang.Integer> to: java.util.ArrayList <String>'
+    }
+
+    // GROOVY-6912
+    void testSetDerivativesInitializedByListLiteral() {
+        assertScript '''
+            LinkedHashSet set = [1,2,3]
+            assert set.size() == 3
+            assert set.contains(3)
+        '''
+
+        assertScript '''
+            HashSet set = [1,2,3]
+            assert set.size() == 3
+            assert set.contains(3)
+        '''
+
+        assertScript '''
+            LinkedHashSet set = [[1,2,3]]
+            assert set.size() == 1
+        '''
+
+        assertScript '''
+            LinkedHashSet<Integer> set = [1,2,3]
+            assert set.size() == 3
+            assert set.contains(3)
+        '''
+
+        shouldFailWithMessages '''
+            LinkedHashSet<String> strings = [1,2,3]
+        ''', 'Incompatible generic argument types. Cannot assign java.util.LinkedHashSet <java.lang.Integer> to: java.util.LinkedHashSet <String>'
+    }
+
+    void testCollectionTypesInitializedByListLiteral1() {
+        assertScript '''
+            Set<String> set = []
+            set << 'foo'
+            set << 'bar'
+            set << 'foo'
+            assert set.size() == 2
+        '''
+
+        assertScript '''
+            AbstractSet<String> set = []
+            set << 'foo'
+            set << 'bar'
+            set << 'foo'
+            assert set.size() == 2
+        '''
+    }
+
+    // GROOVY-10002
+    void testCollectionTypesInitializedByListLiteral2() {
+        assertScript '''
+            Set<String> set = ['foo', 'bar', 'foo']
+            assert set.size() == 2
+        '''
+
+        assertScript '''
+            AbstractList<String> list = ['foo', 'bar', 'foo']
+            assert list.size() == 3
+        '''
+
+        assertScript '''
+            ArrayDeque<String> deque = [123] // ArrayDeque(int numElements)
+        '''
+    }
+
+    // GROOVY-10002
+    void testCollectionTypesInitializedByListLiteral3() {
+        shouldFailWithMessages '''
+            Set<String> set = [1,2,3]
+        ''', 'Cannot assign java.util.LinkedHashSet <java.lang.Integer> to: java.util.Set <String>'
+
+        shouldFailWithMessages '''
+            List<String> list = ['a','b',3]
+        ''', 'Cannot assign java.util.ArrayList <java.io.Serializable> to: java.util.List <String>'
+
+        shouldFailWithMessages '''
+            Iterable<String> iter = [1,2,3]
+        ''', 'Cannot assign java.util.ArrayList <java.lang.Integer> to: java.lang.Iterable <String>'
+
+        shouldFailWithMessages '''
+            Collection<String> coll = [1,2,3]
+        ''', 'Cannot assign java.util.ArrayList <java.lang.Integer> to: java.util.Collection <String>'
+
+        shouldFailWithMessages '''
+            Deque<String> deque = [""]
+        ''', 'Cannot assign value of type java.util.List <java.lang.String> to variable of type java.util.Deque <String>'
+
+        shouldFailWithMessages '''
+            Deque<String> deque = []
+        ''', 'Cannot assign value of type java.util.List <java.lang.String> to variable of type java.util.Deque <String>'
+
+        shouldFailWithMessages '''
+            Queue<String> queue = []
+        ''', 'Cannot assign value of type java.util.List <java.lang.String> to variable of type java.util.Queue <String>'
+    }
+
+    // GROOVY-7128
+    void testCollectionTypesInitializedByListLiteral4() {
+        assertScript '''
+            Collection<Number> collection = [1,2,3]
+            assert collection.size() == 3
+            assert collection.last() == 3
+        '''
+
+        assertScript '''
+            List<Number> list = [1,2,3]
+            assert list.size() == 3
+            assert list.last() == 3
+        '''
+
+        assertScript '''
+            Set<Number> set = [1,2,3,3]
+            assert set.size() == 3
+            assert set.last() == 3
+        '''
+    }
+
+    void testMapWithTypeArgumentsInitializedByMapLiteral() {
+        ['CharSequence,Integer', 'String,Number', 'CharSequence,Number'].each { spec ->
+            assertScript """
+                Map<$spec> map = [a:1,b:2,c:3]
+                assert map.size() == 3
+                assert map['c'] == 3
+                assert 'x' !in map
+            """
+        }
+
+        shouldFailWithMessages '''
+            Map<String,Integer> map = [1:2]
+        ''', 'Cannot assign java.util.LinkedHashMap <java.lang.Integer, java.lang.Integer> to: java.util.Map <String, Integer>'
     }
 }
