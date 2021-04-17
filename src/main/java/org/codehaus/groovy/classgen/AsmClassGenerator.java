@@ -216,7 +216,9 @@ public class AsmClassGenerator extends ClassGenerator {
     // type conversions
     private static final MethodCaller createMapMethod = MethodCaller.newStatic(ScriptBytecodeAdapter.class, "createMap");
     private static final MethodCaller createListMethod = MethodCaller.newStatic(ScriptBytecodeAdapter.class, "createList");
-    private static final MethodCaller createRangeMethod = MethodCaller.newStatic(ScriptBytecodeAdapter.class, "createRange");
+    // The 3-parameter version of createRange is kept in for backwards compatibility, so we need to specify the
+    // parameter count here
+    private static final MethodCaller createRangeMethod = MethodCaller.newStatic(ScriptBytecodeAdapter.class, "createRange", 4);
     private static final MethodCaller createPojoWrapperMethod = MethodCaller.newStatic(ScriptBytecodeAdapter.class, "createPojoWrapper");
     private static final MethodCaller createGroovyObjectWrapperMethod = MethodCaller.newStatic(ScriptBytecodeAdapter.class, "createGroovyObjectWrapper");
 
@@ -1526,10 +1528,11 @@ public class AsmClassGenerator extends ClassGenerator {
         operandStack.box();
         expression.getTo().visit(this);
         operandStack.box();
-        operandStack.pushBool(expression.isInclusive());
+        operandStack.pushBool(expression.isExclusiveLeft());
+        operandStack.pushBool(expression.isExclusiveRight());
 
         createRangeMethod.call(controller.getMethodVisitor());
-        operandStack.replace(ClassHelper.RANGE_TYPE, 3);
+        operandStack.replace(ClassHelper.RANGE_TYPE, 4);
     }
 
     @Override
@@ -1643,8 +1646,6 @@ public class AsmClassGenerator extends ClassGenerator {
     @Override
     public void visitArrayExpression(final ArrayExpression expression) {
         MethodVisitor mv = controller.getMethodVisitor();
-        ClassNode elementType = expression.getElementType();
-        String arrayTypeName = BytecodeHelper.getClassInternalName(elementType);
 
         int size = 0;
         int dimensions = 0;
@@ -1655,15 +1656,18 @@ public class AsmClassGenerator extends ClassGenerator {
             for (Expression element : expression.getSizeExpression()) {
                 if (element == ConstantExpression.EMPTY_EXPRESSION) break;
                 dimensions += 1;
-                // let's convert to an int
+                // convert to an int
                 element.visit(this);
                 controller.getOperandStack().doGroovyCast(ClassHelper.int_TYPE);
             }
             controller.getOperandStack().remove(dimensions);
         }
 
+        ClassNode arrayType = expression.getType();
+        ClassNode elementType = arrayType.getComponentType();
+
         int storeIns = AASTORE;
-        if (expression.hasInitializer()) {
+        if (!elementType.isArray() || expression.hasInitializer()) {
             if (ClassHelper.isPrimitiveType(elementType)) {
                 int primType = 0;
                 if (elementType == ClassHelper.boolean_TYPE) {
@@ -1693,11 +1697,10 @@ public class AsmClassGenerator extends ClassGenerator {
                 }
                 mv.visitIntInsn(NEWARRAY, primType);
             } else {
-                mv.visitTypeInsn(ANEWARRAY, arrayTypeName);
+                mv.visitTypeInsn(ANEWARRAY, BytecodeHelper.getClassInternalName(elementType));
             }
         } else {
-            arrayTypeName = BytecodeHelper.getTypeDescription(expression.getType());
-            mv.visitMultiANewArrayInsn(arrayTypeName, dimensions);
+            mv.visitMultiANewArrayInsn(BytecodeHelper.getTypeDescription(arrayType), dimensions);
         }
 
         for (int i = 0; i < size; i += 1) {
@@ -1714,7 +1717,7 @@ public class AsmClassGenerator extends ClassGenerator {
             controller.getOperandStack().remove(1);
         }
 
-        controller.getOperandStack().push(expression.getType());
+        controller.getOperandStack().push(arrayType);
     }
 
     @Override

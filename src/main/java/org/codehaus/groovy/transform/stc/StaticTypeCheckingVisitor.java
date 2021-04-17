@@ -134,6 +134,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
@@ -266,6 +267,7 @@ import static org.codehaus.groovy.transform.stc.StaticTypeCheckingSupport.isBitO
 import static org.codehaus.groovy.transform.stc.StaticTypeCheckingSupport.isBoolIntrinsicOp;
 import static org.codehaus.groovy.transform.stc.StaticTypeCheckingSupport.isClassClassNodeWrappingConcreteType;
 import static org.codehaus.groovy.transform.stc.StaticTypeCheckingSupport.isCompareToBoolean;
+import static org.codehaus.groovy.transform.stc.StaticTypeCheckingSupport.isGStringOrGStringStringLUB;
 import static org.codehaus.groovy.transform.stc.StaticTypeCheckingSupport.isOperationInGroup;
 import static org.codehaus.groovy.transform.stc.StaticTypeCheckingSupport.isParameterizedWithGStringOrGStringString;
 import static org.codehaus.groovy.transform.stc.StaticTypeCheckingSupport.isParameterizedWithString;
@@ -957,37 +959,40 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
         // we know that the RHS type is a closure
         // but we must check if the binary expression is an assignment
         // because we need to check if a setter uses @DelegatesTo
-        VariableExpression ve = varX("%", setterInfo.receiverType);
-        // for compound assignment "x op= y" find type as if it was "x = (x op y)"
+        VariableExpression receiver = varX("%", setterInfo.receiverType);
+        // for "x op= y" expression, find type as if it was "x = x op y"
         Expression newRightExpression = isCompoundAssignment(expression)
                 ? binX(leftExpression, getOpWithoutEqual(expression), rightExpression)
                 : rightExpression;
-        MethodCallExpression call = callX(ve, setterInfo.name, newRightExpression);
-        call.setImplicitThis(false);
-        visitMethodCallExpression(call);
-        MethodNode directSetterCandidate = call.getNodeMetaData(DIRECT_METHOD_CALL_TARGET);
-        if (directSetterCandidate == null) {
-            // this may happen if there's a setter of type boolean/String/Class, and that we are using the property
-            // notation AND that the RHS is not a boolean/String/Class
+
+        Function<Expression, MethodNode> setterCall = right -> {
+            MethodCallExpression call = callX(receiver, setterInfo.name, right);
+            call.setImplicitThis(false);
+            visitMethodCallExpression(call);
+            return call.getNodeMetaData(DIRECT_METHOD_CALL_TARGET);
+        };
+
+        MethodNode methodTarget = setterCall.apply(newRightExpression);
+        if (methodTarget == null && !isCompoundAssignment(expression)) {
+            // if no direct match, try implicit conversion
             for (MethodNode setter : setterInfo.setters) {
-                ClassNode type = getWrapper(setter.getParameters()[0].getOriginType());
-                if (Boolean_TYPE.equals(type) || STRING_TYPE.equals(type) || CLASS_Type.equals(type)) {
-                    call = callX(ve, setterInfo.name, castX(type, newRightExpression));
-                    call.setImplicitThis(false);
-                    visitMethodCallExpression(call);
-                    directSetterCandidate = call.getNodeMetaData(DIRECT_METHOD_CALL_TARGET);
-                    if (directSetterCandidate != null) {
+                ClassNode lType = setter.getParameters()[0].getOriginType();
+                ClassNode rType = getDeclaredOrInferredType(newRightExpression);
+                if (checkCompatibleAssignmentTypes(lType, rType, newRightExpression, false)) {
+                    methodTarget = setterCall.apply(castX(lType, newRightExpression));
+                    if (methodTarget != null) {
                         break;
                     }
                 }
             }
         }
-        if (directSetterCandidate != null) {
+
+        if (methodTarget != null) {
             for (MethodNode setter : setterInfo.setters) {
-                if (setter == directSetterCandidate) {
-                    leftExpression.putNodeMetaData(DIRECT_METHOD_CALL_TARGET, directSetterCandidate);
-                    leftExpression.removeNodeMetaData(INFERRED_TYPE); // clear assumption
-                    storeType(leftExpression, getType(newRightExpression));
+                if (setter == methodTarget) {
+                    leftExpression.putNodeMetaData(DIRECT_METHOD_CALL_TARGET, methodTarget);
+                    leftExpression.removeNodeMetaData(INFERRED_TYPE); // clear the assumption
+                    storeType(leftExpression, methodTarget.getParameters()[0].getOriginType());
                     break;
                 }
             }
@@ -1003,13 +1008,13 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
         return type.equals(CLOSURE_TYPE) && Optional.ofNullable(type.getGenericsTypes()).filter(gts -> gts != null && gts.length == 1).isPresent();
     }
 
-    private boolean isCompoundAssignment(final Expression exp) {
+    private static boolean isCompoundAssignment(final Expression exp) {
         if (!(exp instanceof BinaryExpression)) return false;
         int type = ((BinaryExpression) exp).getOperation().getType();
         return isAssignment(type) && type != ASSIGN;
     }
 
-    private Token getOpWithoutEqual(final Expression exp) {
+    private static Token getOpWithoutEqual(final Expression exp) {
         if (!(exp instanceof BinaryExpression)) return null; // should never happen
         Token op = ((BinaryExpression) exp).getOperation();
         int typeWithoutEqual = TokenUtil.removeAssignment(op.getType());
@@ -2216,7 +2221,14 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
     }
 
     protected void addClosureReturnType(final ClassNode returnType) {
-        typeCheckingContext.getEnclosingClosure().addReturnType(returnType);
+        TypeCheckingContext.EnclosingClosure enclosingClosure = typeCheckingContext.getEnclosingClosure();
+        if (isGStringOrGStringStringLUB(returnType)
+                && STRING_TYPE.equals(getInferredReturnType(enclosingClosure.getClosureExpression()))) {
+            // GROOVY-9971: convert GString to String at the point of return
+            enclosingClosure.addReturnType(STRING_TYPE);
+        } else {
+            enclosingClosure.addReturnType(returnType);
+        }
     }
 
     @Override
@@ -2745,14 +2757,21 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
             if (visitClosures && expression instanceof ClosureExpression
                     || !visitClosures && !(expression instanceof ClosureExpression)) {
                 if (i < params.length && visitClosures) {
-                    Parameter param = params[i];
-                    checkClosureWithDelegatesTo(receiver, selectedMethod, newArgs, params, expression, param);
+                    Parameter target = params[i];
+                    ClassNode targetType = target.getType();
+                    ClosureExpression source = (ClosureExpression) expression;
+                    checkClosureWithDelegatesTo(receiver, selectedMethod, newArgs, params, source, target);
                     if (selectedMethod instanceof ExtensionMethodNode) {
                         if (i > 0) {
-                            inferClosureParameterTypes(receiver, arguments, (ClosureExpression) expression, param, selectedMethod);
+                            inferClosureParameterTypes(receiver, arguments, source, target, selectedMethod);
                         }
                     } else {
-                        inferClosureParameterTypes(receiver, newArgs, (ClosureExpression) expression, param, selectedMethod);
+                        inferClosureParameterTypes(receiver, newArgs, source, target, selectedMethod);
+                    }
+                    if (isFunctionalInterface(targetType)) {
+                        storeInferredReturnType(source, GenericsUtils.parameterizeSAM(targetType).getV2());
+                    } else if (isClosureWithType(targetType)) {
+                        storeInferredReturnType(source, getCombinedBoundType(targetType.getGenericsTypes()[0]));
                     }
                 }
                 expression.visit(this);
@@ -2826,19 +2845,14 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
         }
         if (!entries.containsKey(name)) {
             if (required) {
-                addStaticTypeError("required named arg '" + name + "' not found.", expression);
+                addStaticTypeError("required named param '" + name + "' not found.", expression);
             }
-        } else {
-            Expression supplied = entries.get(name);
-            if (isCompatibleType(expectedType, expectedType != null, supplied.getType())) {
-                addStaticTypeError("parameter for named arg '" + name + "' has type '" + prettyPrintType(supplied.getType()) +
-                        "' but expected '" + prettyPrintType(expectedType) + "'.", expression);
+        } else if (expectedType != null) {
+            ClassNode argumentType = getDeclaredOrInferredType(entries.get(name));
+            if (!isAssignableTo(argumentType, expectedType)) {
+                addStaticTypeError("argument for named param '" + name + "' has type '" + prettyPrintType(argumentType) + "' but expected '" + prettyPrintType(expectedType) + "'.", expression);
             }
         }
-    }
-
-    private boolean isCompatibleType(final ClassNode expectedType, final boolean b, final ClassNode type) {
-        return b && !isAssignableTo(type, expectedType);
     }
 
     /**
@@ -5241,7 +5255,7 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
             } else {
                 args.addExpression(arguments);
             }
-            return inferReturnTypeGenerics(receiver, dgm, args);
+            return inferReturnTypeGenerics(receiver, dgm, args, explicitTypeHints);
         }
         Map<GenericsTypeName, GenericsType> resolvedPlaceholders = resolvePlaceHoldersFromDeclaration(receiver, getDeclaringClass(method, arguments), method, method.isStatic());
         resolvePlaceholdersFromExplicitTypeHints(method, explicitTypeHints, resolvedPlaceholders);
@@ -5531,11 +5545,15 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
     }
 
     private ClassNode getDeclaredOrInferredType(final Expression expression) {
+        ClassNode declaredOrInferred;
         // in case of "T t = new ExtendsOrImplementsT()", return T for the expression type
         if (expression instanceof Variable && !((Variable) expression).isDynamicTyped()) {
-            return getOriginalDeclarationType(expression); // GROOVY-9996
+            declaredOrInferred = getOriginalDeclarationType(expression); // GROOVY-9996
+        } else {
+            declaredOrInferred = getType(expression);
         }
-        return getInferredTypeFromTempInfo(expression, getType(expression));
+        // GROOVY-10011: apply instanceof constraints to either option
+        return getInferredTypeFromTempInfo(expression, declaredOrInferred);
     }
 
     private static ClassNode getDeclaringClass(final MethodNode method, final Expression arguments) {
@@ -5645,6 +5663,10 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
             ClassNode[] paramTypes = new ClassNode[parameters.length];
             for (int i = 0, n = parameters.length; i < n; i += 1) {
                 paramTypes[i] = fullyResolveType(parameters[i].getType(), classGTs);
+                // GROOVY-10010: check for List<String> parameter and ["foo","$bar"] argument
+                if (i < arguments.length && hasGStringStringError(paramTypes[i], arguments[i], location)) {
+                    return false;
+                }
             }
             addStaticTypeError("Cannot call " + toMethodGenericTypesString(candidateMethod) + prettyPrintTypeName(receiver) + "#" +
                     toMethodParametersString(candidateMethod.getName(), paramTypes) + " with arguments " + formatArgumentList(arguments), location);
