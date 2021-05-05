@@ -422,7 +422,7 @@ public class ClassHelper {
     public static boolean isFunctionalInterface(final ClassNode type) {
         // Functional interface must be an interface at first, or the following exception will occur:
         // java.lang.invoke.LambdaConversionException: Functional interface SamCallable is not an interface
-        return type.isInterface() && isSAMType(type);
+        return type != null && type.isInterface() && isSAMType(type);
     }
 
     /**
@@ -499,30 +499,25 @@ public class ClassHelper {
      * @param goalClazz the goal class
      * @return the next super class or interface
      */
-    public static ClassNode getNextSuperClass(ClassNode clazz, ClassNode goalClazz) {
+    public static ClassNode getNextSuperClass(final ClassNode clazz, final ClassNode goalClazz) {
         if (clazz.isArray()) {
             if (!goalClazz.isArray()) return null;
+
             ClassNode cn = getNextSuperClass(clazz.getComponentType(), goalClazz.getComponentType());
             if (cn != null) cn = cn.makeArray();
             return cn;
         }
 
-        if (!goalClazz.isInterface()) {
-            if (clazz.isInterface()) {
-                if (OBJECT_TYPE.equals(clazz)) return null;
-                return OBJECT_TYPE;
-            } else {
-                return clazz.getUnresolvedSuperClass();
+        if (goalClazz.isInterface()) {
+            for (ClassNode face : clazz.getUnresolvedInterfaces()) {
+                if (StaticTypeCheckingSupport.implementsInterfaceOrIsSubclassOf(face, goalClazz)) {
+                    return face;
+                }
             }
+        } else if (clazz.isInterface()) {
+            return OBJECT_TYPE;
         }
 
-        ClassNode[] interfaces = clazz.getUnresolvedInterfaces();
-        for (ClassNode anInterface : interfaces) {
-            if (StaticTypeCheckingSupport.implementsInterfaceOrIsSubclassOf(anInterface, goalClazz)) {
-                return anInterface;
-            }
-        }
-        //none of the interfaces here match, so continue with super class
         return clazz.getUnresolvedSuperClass();
     }
 }

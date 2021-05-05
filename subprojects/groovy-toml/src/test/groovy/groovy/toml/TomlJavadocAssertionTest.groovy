@@ -16,33 +16,13 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package groovy.bugs
+package groovy.toml
 
-import groovy.transform.CompileStatic
-import org.junit.Test
+import groovy.test.JavadocAssertionTestSuite
+import org.junit.runner.RunWith
+import org.junit.runners.Suite
 
-import static groovy.test.GroovyAssert.assertScript
-
-@CompileStatic
-final class Groovy8223 {
-    @Test
-    void testMultiAssignment() {
-        assertScript '''\
-            @groovy.transform.CompileStatic
-            class Blah {
-                static Tuple2<String, Integer> dostuff() { 
-                    new Tuple2<>("string", 55) 
-                }
-            }
-            
-            @groovy.transform.CompileStatic
-            def x() {
-                def (String mystr, Integer myint) = Blah.dostuff()
-                assert 'string' == mystr
-                assert 55 == myint
-            }
-            
-            x()
-        '''
-    }
+@RunWith(Suite)
+@Suite.SuiteClasses(JavadocAssertionTestSuite)
+class TomlJavadocAssertionTest {
 }

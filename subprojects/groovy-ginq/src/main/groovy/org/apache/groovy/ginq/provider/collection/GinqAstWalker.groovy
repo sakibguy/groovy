@@ -820,7 +820,7 @@ class GinqAstWalker implements GinqAstVisitor<Expression>, SyntaxErrorReportable
             }
         })).getExpression(0)
 
-        def extra = []
+        List<Expression> extra = []
         if (enableCount || rowNumberUsed) {
             currentGinqExpression.putNodeMetaData(__RN_USED, true)
             extra << callX(varX(rowNumberName), 'getAndIncrement')
@@ -873,7 +873,7 @@ class GinqAstWalker implements GinqAstVisitor<Expression>, SyntaxErrorReportable
             validateWindowClause(classifierExpr, orderExpr, rowsExpr, rangeExpr, ignoredMethodCallExpressionList)
         }
 
-        def argumentExpressionList = []
+        List<Expression> argumentExpressionList = []
 
         if (classifierExpr) {
             List<Expression> expressionList = ((ArgumentListExpression) classifierExpr).getExpressions()
@@ -1322,21 +1322,21 @@ class GinqAstWalker implements GinqAstVisitor<Expression>, SyntaxErrorReportable
         }
 
         /*
-                 * `n1`(`from` node) join `n2` join `n3`  will construct a join tree:
-                 *
-                 *  __t (join node)
-                 *    |__ v2 (n3)
-                 *    |__ v1 (join node)
-                 *         |__ v2 (n2)
-                 *         |__ v1 (n1) (`from` node)
-                 *
-                 * Note: `__t` is a tuple with 2 elements
-                 * so  `n3`'s access path is `__t.v2`
-                 * and `n2`'s access path is `__t.v1.v2`
-                 * and `n1`'s access path is `__t.v1.v1`
-                 *
-                 * The following code shows how to construct the access path for variables
-                 */
+         * `n1`(`from` node) join `n2` join `n3`  will construct a join tree:
+         *
+         *  __t (join node)
+         *    |__ v2 (n3)
+         *    |__ v1 (join node)
+         *         |__ v2 (n2)
+         *         |__ v1 (n1) (`from` node)
+         *
+         * Note: `__t` is a tuple with 2 elements
+         * so  `n3`'s access path is `__t.v2`
+         * and `n2`'s access path is `__t.v1.v2`
+         * and `n1`'s access path is `__t.v1.v1`
+         *
+         * The following code shows how to construct the access path for variables
+         */
         Map<String, Expression> aliasToAccessPathMap = new LinkedHashMap<>()
         for (DataSourceExpression dse = dataSourceExpression; dse instanceof JoinExpression; dse = dse.dataSourceExpression) {
             DataSourceExpression otherDataSourceExpression = dse.dataSourceExpression

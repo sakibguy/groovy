@@ -16,8 +16,7 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-import javax.inject.Inject
-import org.apache.groovy.gradle.SharedConfiguration
+
 import org.apache.groovy.gradle.DistributionExtension
 import org.apache.groovy.gradle.DocGDK
 
@@ -208,11 +207,6 @@ tasks.named('asciidoctorPdf') {
     outputDir = "$buildDir/asciidocAll/pdf"
 }
 
-interface Services {
-    @Inject
-    SoftwareComponentFactory getSoftwareComponentFactory()
-}
-
 // The Groovy distribution module isn't a Java library
 // so we create a custom publication
 def factory = objects.newInstance(Services).softwareComponentFactory
@@ -231,6 +225,7 @@ def bin = configurations.create("distributionBinary") {
         }
     }
 }
+
 component.addVariantsFromConfiguration(bin) {
     mapToOptional()
 }
@@ -246,8 +241,7 @@ def sdkElements = configurations.create("sdkElements") {
         }
     }
 }
+
 signing {
     sign sdkElements
 }
-
-

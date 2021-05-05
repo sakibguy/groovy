@@ -16,29 +16,29 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package groovy.bugs
+package groovy.toml;
 
-import gls.CompilableTestSupport
+import groovy.lang.GroovyRuntimeException;
+import org.apache.groovy.lang.annotation.Incubating;
 
-class Groovy3731Bug extends CompilableTestSupport {
-    
-    void testWrongGenericsUseInFieldsAndMethods() {
-        shouldNotCompile """
-            public class G3731A {
-                Map<Object> m = [:]
-            }
-        """
+/**
+ * Represents runtime exception occurred when parsing or building TOML
+ *
+ * @since 4.0.0
+ */
+@Incubating
+public class TomlRuntimeException extends GroovyRuntimeException {
+    private static final long serialVersionUID = -5723737489247290350L;
 
-        shouldNotCompile """
-            public class G3731B {
-                void m1(x, Map<Object> y) {}
-            }
-        """
+    public TomlRuntimeException(String msg) {
+        super(msg);
+    }
 
-        shouldNotCompile """
-            public class G3731C {
-                Map<Object> m1(x, y) {null}
-            }
-        """
+    public TomlRuntimeException(Throwable cause) {
+        super(cause);
+    }
+
+    public TomlRuntimeException(String msg, Throwable cause) {
+        super(msg, cause);
     }
 }

@@ -40,7 +40,7 @@ buildscript {
 
 plugins {
     id 'me.champeau.buildscan-recipes' version '0.2.3'
-    id 'com.github.ben-manes.versions' version '0.36.0'
+    id 'com.github.ben-manes.versions' version '0.38.0'
     id 'com.github.blindpirate.osgi' version '0.0.4'
     id 'org.sonarqube' version '3.0'
     id 'org.apache.groovy-core'
@@ -231,10 +231,10 @@ tasks.named('test') {
 
 if (!JavaVersion.current().java10Compatible) {
     logger.lifecycle '''
-    **************************************** WARNING ********************************************
-    ******   You are running the build with an older JDK. NEVER try to release with 1.8.   ******
-    ******   You must use a JDK 10+ in order to compile all features of the language.     ******
-    *********************************************************************************************
+**************************************** WARNING ********************************************
+******   You are running the build with an older JDK. NEVER try to release with 1.8.   ******
+******   You must use a JDK 10+ in order to compile all features of the language.      ******
+*********************************************************************************************
 '''
 }
 
@@ -264,5 +264,14 @@ sonarqube {
         property "sonar.host.url", "https://sonarcloud.io"
         property "sonar.cpd.exclusions", "**/*"
 //        property "sonar.coverage.jacoco.xmlReportPaths", "${rootProject.buildDir}/reports/jacoco/jacocoAllReport/jacocoAllReport.xml"
+    }
+}
+
+def UNSTABLE = /^([0-9,.-]+[.-](alpha|beta|rc)[.\d-]*)|20030203.000550|20031129.200437$/
+// ignore non-stable releases
+tasks.named("dependencyUpdates")?.configure {
+    gradleReleaseChannel = 'current'
+    rejectVersionIf {
+        !(it.currentVersion.toLowerCase() ==~ UNSTABLE) && it.candidate.version.toLowerCase() ==~ UNSTABLE
     }
 }

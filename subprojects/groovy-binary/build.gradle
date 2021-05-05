@@ -45,6 +45,7 @@ distribution {
             'org.codehaus.groovy.runtime.ProcessGroovyMethods',
             'org.codehaus.groovy.runtime.ResourceGroovyMethods',
             'org.codehaus.groovy.runtime.SocketGroovyMethods',
+            'org.codehaus.groovy.runtime.StreamGroovyMethods',
             'org.codehaus.groovy.runtime.StringGroovyMethods',
             'org.codehaus.groovy.vmplugin.v8.PluginDefaultGroovyMethods',
             'org.codehaus.groovy.vmplugin.v9.PluginDefaultGroovyMethods',
@@ -188,4 +189,9 @@ distribution {
             }
         }
     }
+}
+
+tasks.withType(AbstractArchiveTask) {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
 }

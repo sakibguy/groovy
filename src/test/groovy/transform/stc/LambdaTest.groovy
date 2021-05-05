@@ -18,6 +18,7 @@
  */
 package groovy.transform.stc
 
+import groovy.test.NotYetImplemented
 import groovy.transform.CompileStatic
 import org.junit.Test
 
@@ -161,36 +162,16 @@ final class LambdaTest {
         '''
     }
 
-    @Test
-    void testConsumer() {
+    @Test @NotYetImplemented
+    void testBiFunctionAndBinaryOperatorWithSharedTypeParameter() {
         assertScript '''
             @groovy.transform.CompileStatic
-            class Test1 {
-                static main(args) {
-                    p()
-                }
-
-                static void p() {
-                    [1, 2, 3].stream().forEach(e -> { System.out.println(e + 1); })
-                }
+            void test() {
+                String string = java.util.stream.IntStream.range(0, 10)
+                    .boxed().reduce('', (s, i) -> s + '-', String::concat)
+                assert string == '----------'
             }
-        '''
-    }
-
-    @Test // GROOVY-9340
-    void testConsumerWithSelfType() {
-        assertScript '''
-            @groovy.transform.CompileStatic
-            class Test1 {
-                static main(args) {
-                    p()
-                }
-
-                static void p() {
-                    java.util.function.Consumer<Test1> c = t -> null
-                    c.accept(this.newInstance())
-                }
-            }
+            test()
         '''
     }
 
@@ -308,7 +289,7 @@ final class LambdaTest {
                 Comparator<Integer> c = (int a, int b) -> Integer.compare(a, b)
             }
         '''
-        assert err =~ /Cannot assign java.util.Comparator <int> to: java.util.Comparator <Integer>/
+        assert err =~ /Cannot assign java.util.Comparator<int> to: java.util.Comparator<java.lang.Integer>/
     }
 
     @Test // GROOVY-9977
@@ -806,6 +787,58 @@ final class LambdaTest {
             }
             test()
         '''
+    }
+
+    @Test // GROOVY-9340
+    void testConsumer8() {
+        assertScript '''
+            @groovy.transform.CompileStatic
+            class Test1 {
+                static main(args) {
+                    p()
+                }
+
+                static void p() {
+                    java.util.function.Consumer<Test1> c = t -> null
+                    c.accept(this.newInstance())
+                }
+            }
+        '''
+    }
+
+    @Test
+    void testConsumer9() {
+        assertScript '''
+            @groovy.transform.CompileStatic
+            class Test1 {
+                static main(args) {
+                    p()
+                }
+
+                static void p() {
+                    [1, 2, 3].stream().forEach(e -> { System.out.println(e + 1); })
+                }
+            }
+        '''
+    }
+
+    @Test // GROOVY-10056
+    void testConsumer10() {
+        ['CompileStatic', 'TypeChecked'].each { xform ->
+            assertScript """
+                @groovy.transform.${xform}
+                void test() {
+                    String[][] arrayArray = new String[][] {
+                        new String[] {'a','b','c'},
+                        new String[] {'d','e','f'}
+                    }
+                    Arrays.stream(arrayArray).limit(1).forEach(array -> {
+                        assert Arrays.asList(array) == ['a','b','c']
+                    })
+                }
+                test()
+            """
+        }
     }
 
     @Test

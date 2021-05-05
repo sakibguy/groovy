@@ -1157,9 +1157,9 @@ assert it.next() == 1G
             def map = new LinkedHashMap<>([a:1,b:2])
             @ASTTest(phase=INSTRUCTION_SELECTION, value={
                 def ift = node.getNodeMetaData(INFERRED_TYPE)
-                assert ift == make(Set)
-                assert ift.isUsingGenerics()
-                assert ift.genericsTypes[0].type==STRING_TYPE
+                assert ift == SET_TYPE
+                assert ift.genericsTypes != null
+                assert ift.genericsTypes[0].type == STRING_TYPE
             })
             def set = map.keySet()
             def key = set[0]
@@ -1169,9 +1169,8 @@ assert it.next() == 1G
             def map = new LinkedHashMap([a:1,b:2])
             @ASTTest(phase=INSTRUCTION_SELECTION, value={
                 def ift = node.getNodeMetaData(INFERRED_TYPE)
-                assert ift == make(Set)
-                assert ift.isUsingGenerics()
-                assert ift.genericsTypes[0].name=='K'
+                assert ift == SET_TYPE
+                assert ift.genericsTypes == null
             })
             def set = map.keySet()
             def key = set[0]

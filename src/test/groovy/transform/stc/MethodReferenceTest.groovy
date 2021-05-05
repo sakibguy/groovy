@@ -51,7 +51,38 @@ final class MethodReferenceTest {
             @CompileStatic
             void p() {
                 def result = [1, 2, 3].stream().map(Integer::toString).collect(Collectors.toList())
-                assert result ['1', '2', '3']
+                assert result == ['1', '2', '3']
+            }
+
+            p()
+        '''
+    }
+
+    @Test // class::instanceMethod -- GROOVY-10047
+    void testFunctionCI3() {
+        assertScript shell, '''
+            import static java.util.stream.Collectors.toMap
+
+            @CompileStatic
+            void p() {
+                List<String> list = ['a','bc','def']
+                Function<String,String> self = str -> str // help for toMap
+                def map = list.stream().collect(toMap(self, String::length))
+                assert map == [a: 1, bc: 2, 'def': 3]
+            }
+
+            p()
+        '''
+
+        assertScript shell, '''
+            import static java.util.stream.Collectors.toMap
+
+            @CompileStatic
+            void p() {
+                List<String> list = ['a','bc','def']
+                // TODO: inference for T in toMap(Function<? super T,...>, Function<? super T,...>)
+                def map = list.stream().collect(toMap(Function.<String>identity(), String::length))
+                assert map == [a: 1, bc: 2, 'def': 3]
             }
 
             p()
@@ -59,7 +90,7 @@ final class MethodReferenceTest {
     }
 
     @Test // class::instanceMethod
-    void testFunctionCI3() {
+    void testFunctionCI4() {
         def err = shouldFail shell, '''
             @CompileStatic
             void p() {
@@ -73,7 +104,7 @@ final class MethodReferenceTest {
     }
 
     @Test // class::instanceMethod -- GROOVY-9814
-    void testFunctionCI4() {
+    void testFunctionCI5() {
         assertScript shell, '''
             @CompileStatic
             class One { String id }
@@ -120,6 +151,34 @@ final class MethodReferenceTest {
             }
 
             p()
+        '''
+    }
+
+    @Test // instance::instanceMethod -- GROOVY-10057
+    void testPredicateII() {
+        assertScript shell, '''
+            Class c = Integer
+            Predicate p
+
+            p = c::isInstance
+            assert p.test(null) == false
+            assert p.test('xx') == false
+            assert p.test(1234) == true
+
+            p = c.&isInstance
+            assert p.test(null) == false
+            assert p.test('xx') == false
+            assert p.test(1234) == true
+
+            p = o -> c.isInstance(o)
+            assert p.test(null) == false
+            assert p.test('xx') == false
+            assert p.test(1234) == true
+
+            p = { c.isInstance(it) }
+            assert p.test(null) == false
+            assert p.test('xx') == false
+            assert p.test(1234) == true
         '''
     }
 
@@ -205,6 +264,47 @@ final class MethodReferenceTest {
         '''
     }
 
+    @Test // instance::instanceMethod
+    void testBinaryOperatorII_RHS() {
+        assertScript shell, '''
+            @CompileStatic
+            void p() {
+                Adder adder = new Adder()
+                BinaryOperator<BigDecimal> b = adder::add
+                def result = [1.0G, 2.0G, 3.0G].stream().reduce(0.0G, b)
+                assert 6.0G == result
+            }
+
+            p()
+
+            class Adder {
+                BigDecimal add(BigDecimal a, BigDecimal b) {
+                    a.add(b)
+                }
+            }
+        '''
+    }
+
+    @Test // expression::instanceMethod
+    void testBinaryOperatorII_RHS2() {
+        assertScript shell, '''
+            @CompileStatic
+            void p() {
+                BinaryOperator<BigDecimal> b = new Adder()::add
+                def result = [1.0G, 2.0G, 3.0G].stream().reduce(0.0G, b)
+                assert 6.0G == result
+            }
+
+            p()
+
+            class Adder {
+                BigDecimal add(BigDecimal a, BigDecimal b) {
+                    a.add(b)
+                }
+            }
+        '''
+    }
+
     @Test // instance::staticMethod
     void testBinaryOperatorIS() {
         assertScript shell, '''
@@ -268,11 +368,12 @@ final class MethodReferenceTest {
     }
 
     @Test // arrayClass::new
-    void testIntFunctionCN() {
+    void testFunctionCN() {
         assertScript shell, '''
             @CompileStatic
             void p() {
-                assert new Integer[] { 1, 2, 3 } == [1, 2, 3].stream().toArray(Integer[]::new)
+                def result = [1, 2, 3].stream().toArray(Integer[]::new)
+                assert result == new Integer[] { 1, 2, 3 }
             }
 
             p()
@@ -280,14 +381,62 @@ final class MethodReferenceTest {
     }
 
     @Test // class::new
-    void testFunctionCN() {
+    void testFunctionCN2() {
         assertScript shell, '''
             @CompileStatic
             void p() {
-                assert [1, 2, 3] == ["1", "2", "3"].stream().map(Integer::new).collect(Collectors.toList())
+                def result = ["1", "2", "3"].stream().map(Integer::new).collect(Collectors.toList())
+                assert result == [1, 2, 3]
             }
 
             p()
+        '''
+    }
+
+    @Test // class::new -- GROOVY-10033
+    void testFunctionCN3() {
+        assertScript shell, '''
+            @CompileStatic
+            class C {
+                C(Function<String,Integer> f) {
+                    def i = f.apply('42')
+                    assert i == 42
+                }
+                static test() {
+                    new C(Integer::new)
+                }
+            }
+            C.test()
+        '''
+    }
+
+    @Test // class::new -- GROOVY-10033
+    void testFunctionCN4() {
+        assertScript shell, '''
+            class A {
+                A(Function<A,B> f) {
+                    B b = f.apply(this)
+                    assert b instanceof X.Y
+                }
+            }
+            class B {
+                B(A a) {
+                    assert a != null
+                }
+            }
+            @CompileStatic
+            class X extends A {
+              public X() {
+                super(Y::new)
+              }
+              private static class Y extends B {
+                Y(A a) {
+                  super(a)
+                }
+              }
+            }
+
+            new X()
         '''
     }
 
@@ -304,8 +453,24 @@ final class MethodReferenceTest {
         '''
     }
 
-    @Test // class::staticMethod -- GROOVY-9799
+    @Test // class::staticMethod
     void testFunctionCS2() {
+        assertScript shell, '''
+            import static java.util.stream.Collectors.toMap
+
+            @CompileStatic
+            void p() {
+                List<String> list = ['x','y','z']
+                def map = list.stream().collect(toMap(Function.identity(), Collections::singletonList))
+                assert map == [x: ['x'], y: ['y'], z: ['z']]
+            }
+
+            p()
+        '''
+    }
+
+    @Test // class::staticMethod -- GROOVY-9799
+    void testFunctionCS3() {
         assertScript shell, '''
             class C {
                 String x
@@ -353,47 +518,6 @@ final class MethodReferenceTest {
             }
 
             p()
-        '''
-    }
-
-    @Test // instance::instanceMethod
-    void testBinaryOperatorII_RHS() {
-        assertScript shell, '''
-            @CompileStatic
-            void p() {
-                Adder adder = new Adder()
-                BinaryOperator<BigDecimal> b = adder::add
-                def result = [1.0G, 2.0G, 3.0G].stream().reduce(0.0G, b)
-                assert 6.0G == result
-            }
-
-            p()
-
-            class Adder {
-                BigDecimal add(BigDecimal a, BigDecimal b) {
-                    a.add(b)
-                }
-            }
-        '''
-    }
-
-    @Test // expression::instanceMethod
-    void testBinaryOperatorII_RHS2() {
-        assertScript shell, '''
-            @CompileStatic
-            void p() {
-                BinaryOperator<BigDecimal> b = new Adder()::add
-                def result = [1.0G, 2.0G, 3.0G].stream().reduce(0.0G, b)
-                assert 6.0G == result
-            }
-
-            p()
-
-            class Adder {
-                BigDecimal add(BigDecimal a, BigDecimal b) {
-                    a.add(b)
-                }
-            }
         '''
     }
 

@@ -234,7 +234,7 @@ class QueryableCollection<T> implements Queryable<T>, Serializable {
                         .filter(m -> null == having || having.test(tuple(m.getKey(), from(m.getValue()))))
                         .map(m -> tuple(m.getKey(), from(m.getValue())));
 
-        return from(stream);
+        return Group.of(stream);
     }
 
     @Override
@@ -285,7 +285,17 @@ class QueryableCollection<T> implements Queryable<T>, Serializable {
             this.makeReusable();
         }
 
-        Stream<U> stream = this.stream().map((T t) -> mapper.apply(t, this));
+        Stream<U> stream = null;
+        if (this instanceof Group) {
+            this.makeReusable();
+            if (0 == this.count()) {
+                stream = Stream.of((T) tuple(NULL, EMPTY_QUERYABLE)).map((T t) -> mapper.apply(t, this));
+            }
+        }
+        if (null == stream) {
+            stream = this.stream().map((T t) -> mapper.apply(t, this));
+        }
+
         if (TRUE_STR.equals(originalParallel)) {
             // invoke `collect` to trigger the intermediate operator, which will create `CompletableFuture` instances
             stream = stream.collect(Collectors.toList()).parallelStream().map((U u) -> {
@@ -583,7 +593,7 @@ class QueryableCollection<T> implements Queryable<T>, Serializable {
                             final Queryable<Tuple2<?, Partition<Tuple2<T, Long>>>> q =
                                     from(listWithIndex)
                                             .groupBy(windowDefinition.partitionBy().compose(Tuple2::getV1))
-                                            .select((e, x) -> Tuple.tuple(e.getV1(), PartitionImpl.newInstance(e.getV2().toList())));
+                                            .select((e, x) -> Tuple.tuple(e.getV1(), Partition.of(e.getV2().toList())));
                             if (q instanceof QueryableCollection) {
                                 ((QueryableCollection) q).makeReusable();
                             }
@@ -599,10 +609,10 @@ class QueryableCollection<T> implements Queryable<T>, Serializable {
         final SortedPartitionCacheKey<T> sortedPartitionCacheKey = new SortedPartitionCacheKey<>(partition, orderId);
         Partition<Tuple2<T, Long>> sortedPartition = sortedPartitionCache.computeIfAbsent(
                 sortedPartitionCacheKey,
-                sortedPartitionId -> PartitionImpl.newInstance(partition.orderBy(composeOrders(windowDefinition)).toList())
+                sortedPartitionId -> Partition.of(partition.orderBy(composeOrders(windowDefinition)).toList())
         );
         
-        return WindowImpl.newInstance(currentRecord, sortedPartition, windowDefinition);
+        return Window.of(currentRecord, sortedPartition, windowDefinition);
     }
 
     private static class PartitionCacheKey {
