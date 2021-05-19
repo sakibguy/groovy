@@ -16,13 +16,21 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.codehaus.groovy.classgen.asm.sc.bugs.support;
+package groovy.bugs
 
-import java.util.Collections;
-import java.util.List;
+import org.junit.Test
 
-public class Groovy7133Support {
-    public static List<int[]> list() {
-        return Collections.singletonList(new int[1]);
+import static groovy.test.GroovyAssert.shouldFail
+
+final class Groovy4365 {
+    @Test
+    void testClassResolve() {
+        def err = shouldFail '''
+            class MyHashMap extends HashMap {
+                static class MyEntry extends HashMap.Entry {
+                }
+            }
+        '''
+        assert err =~ /unable to resolve class HashMap.Entry/
     }
 }

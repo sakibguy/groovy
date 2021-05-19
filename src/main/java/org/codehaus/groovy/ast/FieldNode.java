@@ -83,7 +83,7 @@ public class FieldNode extends AnnotatedNode implements Variable {
     public void setType(ClassNode type) {
         this.type = type;
         this.originType = type;
-        dynamicTyped |= type == ClassHelper.DYNAMIC_TYPE;
+        dynamicTyped |= ClassHelper.isDynamicTyped(type);
     }
 
     public ClassNode getOwner() {

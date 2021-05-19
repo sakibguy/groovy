@@ -16,23 +16,11 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+package groovy.bugs.groovy9890;
 
-
-
-
-package org.codehaus.groovy.classgen.asm.sc.bugs
-
-import groovy.transform.stc.StaticTypeCheckingTestCase
-import org.codehaus.groovy.classgen.asm.sc.StaticCompilationTestSupport
-
-class Groovy6782Bug extends StaticTypeCheckingTestCase implements StaticCompilationTestSupport {
-
-    void testFlowTypingBreaksSubscriptOperator() {
-            assertScript '''String[] array = [123]
-def tokens = array
-def t = tokens[0]
-tokens = [:]    // if this line is removed, compiles fine
-        '''
+public class ImplJ implements Face {
+    @Override
+    public Object foo(String s) {
+        return s;
     }
-
 }

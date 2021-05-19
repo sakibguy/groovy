@@ -58,21 +58,16 @@ import java.util.Map;
 import static org.apache.groovy.ast.tools.ClassNodeUtils.getField;
 import static org.apache.groovy.ast.tools.ExpressionUtils.isThisExpression;
 import static org.apache.groovy.util.BeanUtils.capitalize;
-import static org.codehaus.groovy.ast.ClassHelper.BigDecimal_TYPE;
-import static org.codehaus.groovy.ast.ClassHelper.BigInteger_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.Boolean_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.CLASS_Type;
 import static org.codehaus.groovy.ast.ClassHelper.CLOSURE_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.GROOVY_OBJECT_TYPE;
-import static org.codehaus.groovy.ast.ClassHelper.Integer_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.Iterator_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.LIST_TYPE;
-import static org.codehaus.groovy.ast.ClassHelper.Long_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.MAP_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.Number_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.OBJECT_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.STRING_TYPE;
-import static org.codehaus.groovy.ast.ClassHelper.boolean_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.getUnwrapper;
 import static org.codehaus.groovy.ast.ClassHelper.getWrapper;
 import static org.codehaus.groovy.ast.ClassHelper.int_TYPE;
@@ -89,6 +84,13 @@ import static org.codehaus.groovy.ast.tools.GeneralUtils.isOrImplements;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.nullX;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.propX;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.varX;
+import static org.codehaus.groovy.ast.ClassHelper.isBigDecimalType;
+import static org.codehaus.groovy.ast.ClassHelper.isBigIntegerType;
+import static org.codehaus.groovy.ast.ClassHelper.isClassType;
+import static org.codehaus.groovy.ast.ClassHelper.isPrimitiveBoolean;
+import static org.codehaus.groovy.ast.ClassHelper.isStringType;
+import static org.codehaus.groovy.ast.ClassHelper.isWrapperInteger;
+import static org.codehaus.groovy.ast.ClassHelper.isWrapperLong;
 import static org.codehaus.groovy.transform.stc.StaticTypeCheckingSupport.chooseBestMethod;
 import static org.codehaus.groovy.transform.stc.StaticTypeCheckingSupport.findDGMMethodsByNameAndArguments;
 import static org.codehaus.groovy.transform.stc.StaticTypeCheckingSupport.implementsInterfaceOrIsSubclassOf;
@@ -471,7 +473,7 @@ public class StaticTypesCallSiteWriter extends CallSiteWriter {
             getterName = "is" + capitalize(propertyName);
             getterNode = receiverType.getGetterMethod(getterName);
         }
-        if (getterNode != null && receiver instanceof ClassExpression && !CLASS_Type.equals(receiverType) && !getterNode.isStatic()) {
+        if (getterNode != null && receiver instanceof ClassExpression && !isClassType(receiverType) && !getterNode.isStatic()) {
             return false;
         }
 
@@ -482,7 +484,7 @@ public class StaticTypesCallSiteWriter extends CallSiteWriter {
         if (getterNode == null && propertyNode != null) {
             // it is possible to use a getter
             String prefix = "get";
-            if (boolean_TYPE.equals(propertyNode.getOriginType())) {
+            if (isPrimitiveBoolean(propertyNode.getOriginType())) {
                 prefix = "is";
             }
             getterName = prefix + capitalize(propertyName);
@@ -623,7 +625,7 @@ public class StaticTypesCallSiteWriter extends CallSiteWriter {
                 writeOperatorCall(receiver, arguments, message);
                 return true;
             }
-        } else if (STRING_TYPE.equals(rType) && "plus".equals(message)) {
+        } else if (isStringType(rType) && "plus".equals(message)) {
             writeStringPlusCall(receiver, message, arguments);
             return true;
         } else if ("getAt".equals(message)) {
@@ -746,13 +748,13 @@ public class StaticTypesCallSiteWriter extends CallSiteWriter {
         operandStack.doGroovyCast(getWrapper(aType));
         int m2 = operandStack.getStackLength();
         MethodVisitor mv = controller.getMethodVisitor();
-        if (BigDecimal_TYPE.equals(rType) && Integer_TYPE.equals(getWrapper(aType))) {
+        if (isBigDecimalType(rType) && isWrapperInteger(getWrapper(aType))) {
             mv.visitMethodInsn(INVOKESTATIC, "org/codehaus/groovy/runtime/DefaultGroovyMethods", "power", "(Ljava/math/BigDecimal;Ljava/lang/Integer;)Ljava/lang/Number;", false);
-        } else if (BigInteger_TYPE.equals(rType) && Integer_TYPE.equals(getWrapper(aType))) {
+        } else if (isBigIntegerType(rType) && isWrapperInteger(getWrapper(aType))) {
             mv.visitMethodInsn(INVOKESTATIC, "org/codehaus/groovy/runtime/DefaultGroovyMethods", "power", "(Ljava/math/BigInteger;Ljava/lang/Integer;)Ljava/lang/Number;", false);
-        } else if (Long_TYPE.equals(getWrapper(rType)) && Integer_TYPE.equals(getWrapper(aType))) {
+        } else if (isWrapperLong(getWrapper(rType)) && isWrapperInteger(getWrapper(aType))) {
             mv.visitMethodInsn(INVOKESTATIC, "org/codehaus/groovy/runtime/DefaultGroovyMethods", "power", "(Ljava/lang/Long;Ljava/lang/Integer;)Ljava/lang/Number;", false);
-        } else if (Integer_TYPE.equals(getWrapper(rType)) && Integer_TYPE.equals(getWrapper(aType))) {
+        } else if (isWrapperInteger(getWrapper(rType)) && isWrapperInteger(getWrapper(aType))) {
             mv.visitMethodInsn(INVOKESTATIC, "org/codehaus/groovy/runtime/DefaultGroovyMethods", "power", "(Ljava/lang/Integer;Ljava/lang/Integer;)Ljava/lang/Number;", false);
         } else {
             mv.visitMethodInsn(INVOKESTATIC, "org/codehaus/groovy/runtime/DefaultGroovyMethods", "power", "(Ljava/lang/Number;Ljava/lang/Number;)Ljava/lang/Number;", false);

@@ -322,6 +322,9 @@ public class ClassHelper {
         if (!isPrimitiveType(cn)) return cn;
 
         ClassNode result = PRIMITIVE_TYPE_TO_WRAPPER_TYPE_MAP.get(cn);
+        if (result == null) {
+            result = PRIMITIVE_TYPE_TO_WRAPPER_TYPE_MAP.get(cn.redirect());
+        }
 
         if (null != result) {
             return result;
@@ -371,33 +374,31 @@ public class ClassHelper {
      * @see #make(Class)
      * @see #make(String)
      */
-    public static boolean isStaticConstantInitializerType(ClassNode cn) {
-        cn = cn.redirect();
-        return cn == int_TYPE ||
-                cn == float_TYPE ||
-                cn == long_TYPE ||
-                cn == double_TYPE ||
-                cn == STRING_TYPE ||
+    public static boolean isStaticConstantInitializerType(final ClassNode cn) {
+        return isPrimitiveInt(cn) ||
+                isPrimitiveFloat(cn) ||
+                isPrimitiveLong(cn) ||
+                isPrimitiveDouble(cn) ||
+                isStringType(cn) ||
                 // the next items require conversion to int when initializing
-                cn == byte_TYPE ||
-                cn == char_TYPE ||
-                cn == short_TYPE;
+                isPrimitiveByte(cn) ||
+                isPrimitiveChar(cn) ||
+                isPrimitiveShort(cn);
     }
 
-    public static boolean isNumberType(ClassNode cn) {
-        cn = cn.redirect();
-        return cn == Byte_TYPE ||
-                cn == Short_TYPE ||
-                cn == Integer_TYPE ||
-                cn == Long_TYPE ||
-                cn == Float_TYPE ||
-                cn == Double_TYPE ||
-                cn == byte_TYPE ||
-                cn == short_TYPE ||
-                cn == int_TYPE ||
-                cn == long_TYPE ||
-                cn == float_TYPE ||
-                cn == double_TYPE;
+    public static boolean isNumberType(final ClassNode cn) {
+        return isWrapperByte(cn) ||
+                isWrapperShort(cn) ||
+                isWrapperInteger(cn) ||
+                isWrapperLong(cn) ||
+                isWrapperFloat(cn) ||
+                isWrapperDouble(cn) ||
+                isPrimitiveByte(cn) ||
+                isPrimitiveShort(cn) ||
+                isPrimitiveInt(cn) ||
+                isPrimitiveLong(cn) ||
+                isPrimitiveFloat(cn) ||
+                isPrimitiveDouble(cn);
     }
 
     public static ClassNode makeReference() {
@@ -409,6 +410,110 @@ public class ClassHelper {
             if (cachedType == type) return true;
         }
         return false;
+    }
+
+    public static boolean isDynamicTyped(ClassNode type) {
+        return type != null && DYNAMIC_TYPE == type.redirect();
+    }
+
+    public static boolean isPrimitiveBoolean(ClassNode type) {
+        return type.redirect() == boolean_TYPE;
+    }
+
+    public static boolean isPrimitiveChar(ClassNode type) {
+        return type.redirect() == char_TYPE;
+    }
+
+    public static boolean isPrimitiveByte(ClassNode type) {
+        return type.redirect() == byte_TYPE;
+    }
+
+    public static boolean isPrimitiveInt(ClassNode type) {
+        return type.redirect() == int_TYPE;
+    }
+
+    public static boolean isPrimitiveLong(ClassNode type) {
+        return type.redirect() == long_TYPE;
+    }
+
+    public static boolean isPrimitiveShort(ClassNode type) {
+        return type.redirect() == short_TYPE;
+    }
+
+    public static boolean isPrimitiveDouble(ClassNode type) {
+        return type.redirect() == double_TYPE;
+    }
+
+    public static boolean isPrimitiveFloat(ClassNode type) {
+        return type.redirect() == float_TYPE;
+    }
+
+    public static boolean isPrimitiveVoid(ClassNode type) {
+        return type.redirect() == VOID_TYPE;
+    }
+
+    public static boolean isWrapperBoolean(ClassNode type) {
+        return type != null && type.redirect() == Boolean_TYPE;
+    }
+
+    public static boolean isWrapperCharacter(ClassNode type) {
+        return type != null && type.redirect() == Character_TYPE;
+    }
+
+    public static boolean isWrapperByte(ClassNode type) {
+        return type != null && type.redirect() == Byte_TYPE;
+    }
+
+    public static boolean isWrapperInteger(ClassNode type) {
+        return type != null && type.redirect() == Integer_TYPE;
+    }
+
+    public static boolean isWrapperLong(ClassNode type) {
+        return type != null && type.redirect() == Long_TYPE;
+    }
+
+    public static boolean isWrapperShort(ClassNode type) {
+        return type != null && type.redirect() == Short_TYPE;
+    }
+
+    public static boolean isWrapperDouble(ClassNode type) {
+        return type != null && type.redirect() == Double_TYPE;
+    }
+
+    public static boolean isWrapperFloat(ClassNode type) {
+        return type != null && type.redirect() == Float_TYPE;
+    }
+
+    public static boolean isWrapperVoid(ClassNode type) {
+        return type != null && type.redirect() == void_WRAPPER_TYPE;
+    }
+
+    public static boolean isBigIntegerType(ClassNode type) {
+        return type != null && type.redirect() == BigInteger_TYPE;
+    }
+
+    public static boolean isBigDecimalType(ClassNode type) {
+        return type != null && type.redirect() == BigDecimal_TYPE;
+    }
+
+    public static boolean isStringType(ClassNode type) {
+        return type != null && type.redirect() == STRING_TYPE;
+    }
+
+    public static boolean isGStringType(ClassNode type) {
+        return type != null && type.redirect() == GSTRING_TYPE;
+    }
+
+    public static boolean isObjectType(ClassNode type) {
+        return OBJECT_TYPE.equals(type);
+    }
+
+    public static boolean isGroovyObjectType(ClassNode type) {
+        return GROOVY_OBJECT_TYPE.equals(type);
+    }
+
+    public static boolean isClassType(ClassNode type) {
+        return CLASS_Type.equals(type);
     }
 
     static class ClassHelperCache {
@@ -457,7 +562,7 @@ public class ClassHelper {
                 if (!Modifier.isAbstract(mi.getModifiers())) continue;
                 // ignore trait methods which have a default implementation
                 if (Traits.hasDefaultImplementation(mi)) continue;
-                if (mi.getDeclaringClass().equals(OBJECT_TYPE)) continue;
+                if (isObjectType(mi.getDeclaringClass())) continue;
                 if (OBJECT_TYPE.getDeclaredMethod(mi.getName(), mi.getParameters()) != null) continue;
 
                 // we have two methods, so no SAM
@@ -485,7 +590,7 @@ public class ClassHelper {
         int asp = found.getModifiers() & ABSTRACT_STATIC_PRIVATE;
         int visible = found.getModifiers() & VISIBILITY;
         if (visible != 0 && asp == 0) return true;
-        if (c.equals(OBJECT_TYPE)) return false;
+        if (isObjectType(c)) return false;
         return hasUsableImplementation(c.getSuperClass(), m);
     }
 

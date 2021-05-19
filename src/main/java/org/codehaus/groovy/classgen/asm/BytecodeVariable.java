@@ -105,7 +105,7 @@ public class BytecodeVariable {
 
     public void setType(ClassNode type) {
         this.type = type;
-        dynamicTyped |= type==ClassHelper.DYNAMIC_TYPE;
+        dynamicTyped |= ClassHelper.isDynamicTyped(type);
     }
 
     public void setDynamicTyped(boolean b) {

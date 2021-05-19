@@ -116,8 +116,8 @@ public interface AbstractFunctionalInterfaceWriter {
         boolean isParameterTypePrimitive = ClassHelper.isPrimitiveType(parameterType);
         boolean isInferredTypePrimitive = ClassHelper.isPrimitiveType(inferredType);
         if (!isParameterTypePrimitive && isInferredTypePrimitive) {
-            if (ClassHelper.DYNAMIC_TYPE.equals(parameterType) && ClassHelper.isPrimitiveType(targetType) // (1)
-                    || parameterType != getUnwrapper(parameterType) && inferredType != getWrapper(inferredType) // (2)
+            if (ClassHelper.isDynamicTyped(parameterType) && ClassHelper.isPrimitiveType(targetType) // (1)
+                    || !parameterType.equals(getUnwrapper(parameterType)) && !inferredType.equals(getWrapper(inferredType)) // (2)
             ) {
                 // GROOVY-9790: bootstrap method initialization exception raised when lambda parameter type is wrong
                 // (1) java.lang.invoke.LambdaConversionException: Type mismatch for instantiated parameter 0: class java.lang.Integer is not a subtype of int

@@ -18,7 +18,6 @@
  */
 package groovy.transform.stc
 
-import groovy.test.NotYetImplemented
 import org.codehaus.groovy.tools.javac.JavaAwareCompilationUnit
 
 /**
@@ -740,8 +739,45 @@ class GenericsSTCTest extends StaticTypeCheckingTestCase {
         '''
     }
 
-    // GROOVY-9970
+    // GROOVY-10080
     void testDiamondInferrenceFromConstructor11() {
+        assertScript '''
+            @groovy.transform.TupleConstructor(defaults=false)
+            class C<T> {
+                T p
+            }
+            class D {
+                int m(Object[] objects) {
+                    42
+                }
+            }
+            def closure = { ->
+                new C<>(new D())
+            }
+            def result = closure().p.m(new BigDecimal[0]) // Cannot find matching method Object#m(...)
+            assert result == 42
+        '''
+    }
+
+    // GROOVY-10086
+    void testDiamondInferrenceFromConstructor12() {
+        shouldFailWithMessages '''
+            @groovy.transform.TupleConstructor(defaults=false)
+            class C<T> {
+                T p
+            }
+            class D {
+            }
+            void m(int i, C<D>... zeroOrMore) {
+                D d = zeroOrMore[0].p
+            }
+            m(0, new C<>(1))
+        ''',
+        'Cannot call', 'm(int, C<D>[]) with arguments [int, C<java.lang.Integer>]'
+    }
+
+    // GROOVY-9970
+    void testDiamondInferrenceFromConstructor13() {
         assertScript '''
             @groovy.transform.TupleConstructor(defaults=false)
             class A<T extends B> {
@@ -762,8 +798,8 @@ class GenericsSTCTest extends StaticTypeCheckingTestCase {
         '''
     }
 
-    @NotYetImplemented // GROOVY-9983
-    void testDiamondInferrenceFromConstructor12() {
+    // GROOVY-9983
+    void testDiamondInferrenceFromConstructor14() {
         String types = '''
             @groovy.transform.TupleConstructor(defaults=false)
             class A<T> {
@@ -802,14 +838,14 @@ class GenericsSTCTest extends StaticTypeCheckingTestCase {
             C.m(new A<>(new Object()))
             C.m(true ? new A<>(new B()) : new A<>(new Object()))
         ''',
-        'Cannot assign A <java.lang.Object> to: A <B>',
-        'Cannot assign A <? extends java.lang.Object> to: A <B>',
-        'Cannot call C#m(A <B>) with arguments [A <java.lang.Object>]',
-        'Cannot call C#m(A <B>) with arguments [A <? extends java.lang.Object>]'
+        'Cannot assign A<java.lang.Object> to: A<B>',
+        'Cannot assign A<? extends java.lang.Object> to: A<B>',
+        'Cannot call C#m(A<B>) with arguments [A<java.lang.Object>]',
+        'Cannot call C#m(A<B>) with arguments [A<? extends java.lang.Object>]'
     }
 
     // GROOVY-9995
-    void testDiamondInferrenceFromConstructor13() {
+    void testDiamondInferrenceFromConstructor15() {
         [
             ['Closure<A<Long>>', 'java.util.concurrent.Callable<A<Long>>'],
             ['new A<>(42L)', 'return new A<>(42L)']
@@ -1429,7 +1465,7 @@ class GenericsSTCTest extends StaticTypeCheckingTestCase {
         }
     }
 
-    @NotYetImplemented // GROOVY-9803
+    // GROOVY-9803
     void testShouldUseMethodGenericType8() {
         assertScript '''
             def opt = Optional.of(42)
@@ -1438,31 +1474,33 @@ class GenericsSTCTest extends StaticTypeCheckingTestCase {
             assert opt.get() == 42
         '''
         // same as above but with separate type parameter name for each location
-        assertScript '''
-            abstract class A<I,O> {
-                abstract O apply(I input)
-            }
-            class C<T> {
-                static <U> C<U> of(U item) {
-                    new C<U>()
+        ['D.&wrap', 'Collections.&singleton', '{x -> [x].toSet()}', '{Collections.singleton(it)}'].each { toSet ->
+            assertScript """
+                abstract class A<I,O> {
+                    abstract O apply(I input)
                 }
-                def <V> C<V> map(A<? super T, ? super V> func) {
-                    new C<V>()
+                class C<T> {
+                    static <U> C<U> of(U item) {
+                        new C<U>()
+                    }
+                    def <V> C<V> map(A<? super T, ? super V> func) {
+                        new C<V>()
+                    }
                 }
-            }
-            class D {
-                static <W> Set<W> wrap(W o) {
+                class D {
+                    static <W> Set<W> wrap(W o) {
+                    }
                 }
-            }
 
-            void test() {
-                def c = C.of(42)
-                def d = c.map(D.&wrap)
-                def e = d.map(x -> x.first().intValue())
-            }
+                void test() {
+                    def c = C.of(42)
+                    def d = c.map($toSet)
+                    def e = d.map(x -> x.first().intValue())
+                }
 
-            test()
-        '''
+                test()
+            """
+        }
     }
 
     // GROOVY-9945
@@ -1480,6 +1518,82 @@ class GenericsSTCTest extends StaticTypeCheckingTestCase {
             def obj = bee.m(3.14f)
             assert obj == 'works'
         '''
+    }
+
+    // GROOVY-8409, GROOVY-9915
+    void testShouldUseMethodGenericType10() {
+        assertScript '''
+            interface OngoingStubbing<T> /*extends IOngoingStubbing*/ {
+                // type parameter from enclosing type in signature:
+                OngoingStubbing<T> thenReturn(T value)
+            }
+            static <T> OngoingStubbing<T> when(T methodCall) {
+                [thenReturn: { T value -> null }] as OngoingStubbing<T>
+            }
+            Optional<String> foo() {
+            }
+
+            when(foo()).thenReturn(Optional.empty())
+        '''
+    }
+
+    // GROOVY-8409, GROOVY-9902
+    void testShouldUseMethodGenericType11() {
+        config.with {
+            targetDirectory = File.createTempDir()
+            jointCompilationOptions = [stubDir: File.createTempDir()]
+        }
+        File parentDir = File.createTempDir()
+        try {
+            def a = new File(parentDir, 'Main.groovy')
+            a.write '''
+                def obj = new Pojo()
+                Foo raw = obj.getFoo('')
+                raw.bar = raw.baz // Cannot assign value of type Object to variable of type R
+            '''
+            def b = new File(parentDir, 'Pojo.java')
+            b.write '''
+                public class Pojo {
+                    public <R extends I> Foo<R> getFoo(String key) {
+                        return new Foo<>();
+                    }
+                }
+            '''
+            def c = new File(parentDir, 'Types.groovy')
+            c.write '''
+                interface I {
+                }
+                class Foo<T extends I> {
+                    T bar
+                    T baz
+                }
+            '''
+
+            def loader = new GroovyClassLoader(this.class.classLoader)
+            def cu = new JavaAwareCompilationUnit(config, loader)
+            cu.addSources(a, b, c)
+            cu.compile()
+
+            loader.loadClass('Main').main()
+        } finally {
+            parentDir.deleteDir()
+            config.targetDirectory.deleteDir()
+            config.jointCompilationOptions.stubDir.deleteDir()
+        }
+    }
+
+    // GROOVY-10088
+    void testShouldUseMethodGenericType12() {
+        shouldFailWithMessages '''
+            class C<T> {
+                void setP(T t) { }
+            }
+            class D<X> extends C<X> {
+            }
+
+            new D<Number>().p = 'x'
+        ''',
+        'Cannot assign value of type java.lang.String to variable of type java.lang.Number'
     }
 
     // GROOVY-5516
@@ -2000,8 +2114,8 @@ class GenericsSTCTest extends StaticTypeCheckingTestCase {
             test(new Holder<Object>())
         ''',
         'Cannot call TypedProperty#eq(java.lang.String) with arguments [groovy.lang.GString]',
-        'Cannot call TypedProperty#eq(java.lang.String) with arguments [int]',
-        'Cannot call TypedProperty#eq(java.lang.Number) with arguments [java.lang.String]'
+        'Cannot find matching method TypedProperty#eq(int)', // chooseBestMethod removes "eq"
+        'Cannot find matching method TypedProperty#eq(java.lang.String)'
     }
 
     // GROOVY-5748

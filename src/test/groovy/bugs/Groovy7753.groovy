@@ -22,94 +22,80 @@ import org.junit.Test
 
 import static groovy.test.GroovyAssert.assertScript
 
-final class Groovy8310 {
+final class Groovy7753 {
 
     @Test
-    void testClosureReturnType1() {
+    void testGroovy7753() {
         assertScript '''
-            def bar(Closure<Collection<Integer>> block) {
-                block()
-            }
+            @groovy.transform.Field
+            String x = "X"
 
             @groovy.transform.CompileStatic
-            def foo() {
-                bar {
-                    [1]
-                }
+            public List<String> getStrings() {
+                x ? [x] : Collections.emptyList()
             }
 
-            assert foo() == [1]
+            getStrings()
         '''
     }
 
     @Test
-    void testClosureReturnType2() {
+    void testGroovy7753WithReturn() {
         assertScript '''
-            def <T> T bar(Closure<Collection<Integer>> block) {
-                block()
-            }
+            @groovy.transform.Field
+            String x = "X"
 
             @groovy.transform.CompileStatic
-            def foo() {
-                bar {
-                    [1]
-                }
+            public List<String> getStrings() {
+                return x ? [x] : Collections.emptyList()
             }
 
-            assert foo() == [1]
+            getStrings()
         '''
     }
 
     @Test
-    void testClosureReturnType3() {
+    void testGroovy7753WithReturn2() {
         assertScript '''
-            def <T> T bar(Closure<? extends Collection<Integer>> block) {
-                block()
-            }
+            @groovy.transform.Field
+            String x = "X"
 
             @groovy.transform.CompileStatic
-            def foo() {
-                bar {
-                    [1]
-                }
+            public List<String> getStrings() {
+                return x ? Collections.emptyList() : [x]
             }
 
-            assert foo() == [1]
+            getStrings()
         '''
     }
 
     @Test
-    void testClosureReturnType4() {
+    void test2() {
         assertScript '''
-            def <T> T bar(Closure<Collection<Integer>> block) {
-                block()
-            }
+            @groovy.transform.Field
+            String x = "X"
 
             @groovy.transform.CompileStatic
-            def foo() {
-                bar {
-                    (Collection<Integer>) [1]
-                }
+            public List<String> getStrings() {
+                Collections.emptyList()
             }
 
-            assert foo() == [1]
+            getStrings()
         '''
     }
 
     @Test
-    void testClosureReturnType5() {
+    void test3() {
         assertScript '''
-            def <T> T bar(Closure<Collection<Integer>> block) {
-                block()
+            @groovy.transform.Field
+            String x = "X"
+
+            @groovy.transform.CompileStatic
+            public List<String> getStrings() {
+                [x]
             }
 
-            def foo() {
-                bar {
-                    [1] as Collection<Integer>
-                }
-            }
-
-            assert foo() == [1]
+            getStrings()
         '''
     }
 }

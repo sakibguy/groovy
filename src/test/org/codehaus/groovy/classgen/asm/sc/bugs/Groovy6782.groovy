@@ -16,26 +16,25 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package groovy.bugs
+package org.codehaus.groovy.classgen.asm.sc.bugs
 
-import groovy.test.GroovyTestCase
+import org.junit.Test
 
-class Groovy4516Bug extends GroovyTestCase {
-    void testDelegateMethodsWithDefaultValues() {
-        assertScript """
-            class Del4516 {
-                def doSomething(boolean flag = true) { 
-                    flag 
-                }
+import static groovy.test.GroovyAssert.assertScript
+
+final class Groovy6782 {
+    @Test
+    void testFlowTypingBreaksSubscriptOperator() {
+        assertScript '''
+            @groovy.transform.CompileStatic
+            void test() {
+                String[] array = [123]
+                def temp = array
+                def x = temp[0]
+
+                temp = [:] // if this line is removed, compiles fine
             }
-            
-            class AClass4516 { 
-                @Delegate Del4516 Del4516 = new Del4516() 
-            }
-            
-            def a = new AClass4516()
-            assert a.doSomething(false) == false
-            assert a.doSomething() == true
-        """
+            test()
+        '''
     }
 }

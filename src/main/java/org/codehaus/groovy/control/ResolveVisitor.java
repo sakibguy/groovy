@@ -69,9 +69,6 @@ import org.codehaus.groovy.transform.trait.Traits;
 import org.codehaus.groovy.vmplugin.VMPluginFactory;
 import org.objectweb.asm.Opcodes;
 
-import java.lang.annotation.Annotation;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
 import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -86,6 +83,7 @@ import java.util.function.Predicate;
 
 import static groovy.lang.Tuple.tuple;
 import static org.codehaus.groovy.ast.tools.ClosureUtils.getParametersSafe;
+import static org.codehaus.groovy.ast.ClassHelper.isObjectType;
 
 /**
  * Visitor to resolve Types and convert VariableExpression to
@@ -266,6 +264,13 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
     }
 
     @Override
+    public void visitMethod(MethodNode node) {
+        super.visitMethod(node);
+        visitGenericsTypeAnnotations(node);
+        visitTypeAnnotations(node.getReturnType());
+    }
+
+    @Override
     protected void visitConstructorOrMethod(final MethodNode node, final boolean isConstructor) {
         VariableScope oldScope = currentScope;
         currentScope = node.getVariableScope();
@@ -281,11 +286,12 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
             resolveOrFail(p.getType(), p.getType());
             visitAnnotations(p);
         }
-        ClassNode[] exceptions = node.getExceptions();
-        for (ClassNode t : exceptions) {
-            resolveOrFail(t, node);
-        }
         resolveOrFail(node.getReturnType(), node);
+        if (node.getExceptions() != null) {
+            for (ClassNode t : node.getExceptions()) {
+                resolveOrFail(t, node);
+            }
+        }
 
         MethodNode oldCurrentMethod = currentMethod;
         currentMethod = node;
@@ -329,6 +335,7 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
     }
 
     private void resolveOrFail(final ClassNode type, final String msg, final ASTNode node, final boolean preferImports) {
+        visitTypeAnnotations(type);
         if (preferImports) {
             resolveGenericsTypes(type.getGenericsTypes());
             if (resolveAliasFromModule(type)) return;
@@ -416,7 +423,7 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
         // GROOVY-9243
         toResolveFurther = false;
         if (typeName.indexOf('.') == -1) {
-            for (ClassNode cn = currentClass; cn != null && !cn.equals(ClassHelper.OBJECT_TYPE); cn = cn.getSuperClass()) {
+            for (ClassNode cn = currentClass; cn != null && !isObjectType(cn); cn = cn.getSuperClass()) {
                 ConstructedOuterNestedClassNode constructedOuterNestedClassNode =
                         tryToConstructOuterNestedClassNodeForBaseType(compileUnit, typeName, cn, setRedirectListener);
                 if (constructedOuterNestedClassNode != null) {
@@ -512,9 +519,10 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
     protected boolean resolveNestedClass(final ClassNode type) {
         if (type instanceof ConstructedNestedClass || type instanceof ConstructedClassWithPackage) return false;
 
-        ClassNode cn = currentClass; Set<ClassNode> cycleCheck = new HashSet<>();
+        ClassNode cn = currentClass;
+        Set<ClassNode> cycleCheck = new HashSet<>();
         // GROOVY-4043: for type "X", try "A$X" with each type in the class hierarchy (except for Object)
-        for (; cn != null && cycleCheck.add(cn) && !cn.equals(ClassHelper.OBJECT_TYPE); cn = cn.getSuperClass()) {
+        for (; cn != null && cycleCheck.add(cn) && !isObjectType(cn); cn = cn.getSuperClass()) {
             if (setRedirect(type, cn)) return true;
             // GROOVY-9866: unresolvable interfaces
         }
@@ -1327,8 +1335,36 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
 
     @Override
     public void visitAnnotations(final AnnotatedNode node) {
-        List<AnnotationNode> annotations = node.getAnnotations();
-        if (annotations.isEmpty()) return;
+        visitAnnotations(node.getAnnotations());
+    }
+
+    private void visitTypeAnnotations(final ClassNode node) {
+        visitAnnotations(node.getTypeAnnotations());
+        visitGenericsTypeAnnotations(node);
+    }
+
+    private void visitGenericsTypeAnnotations(final ClassNode node) {
+        GenericsType[] genericsTypes = node.getGenericsTypes();
+        if (node.isUsingGenerics() && genericsTypes != null) {
+            visitGenericsTypeAnnotations(genericsTypes);
+        }
+    }
+
+    private void visitGenericsTypeAnnotations(final MethodNode node) {
+        GenericsType[] genericsTypes = node.getGenericsTypes();
+        if (genericsTypes != null) {
+            visitGenericsTypeAnnotations(genericsTypes);
+        }
+    }
+
+    private void visitGenericsTypeAnnotations(final GenericsType[] genericsTypes) {
+        for (GenericsType gt : genericsTypes) {
+            visitTypeAnnotations(gt.getType());
+        }
+    }
+
+    private void visitAnnotations(List<AnnotationNode> annotations) {
+        if (annotations == null || annotations.isEmpty()) return;
         for (AnnotationNode an : annotations) {
             // skip built-in properties
             if (an.isBuiltIn()) continue;
@@ -1397,6 +1433,7 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
             genericParameterNames = new HashMap<>();
         }
 
+        visitTypeAnnotations(node);
         resolveGenericsHeader(node.getGenericsTypes());
 
         ModuleNode module = node.getModule();
@@ -1498,7 +1535,7 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
                     }
                 }
             }
-            if (parentToCompare == ClassHelper.OBJECT_TYPE) return;
+            if (isObjectType(parentToCompare)) return;
             checkCyclicInheritance(originalNode, parentToCompare.getUnresolvedSuperClass(), null);
         } else {
             if (interfacesToCompare != null && interfacesToCompare.length > 0) {
@@ -1520,7 +1557,7 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
     @Override
     public void visitCatchStatement(final CatchStatement cs) {
         resolveOrFail(cs.getExceptionType(), cs);
-        if (cs.getExceptionType() == ClassHelper.DYNAMIC_TYPE) {
+        if (ClassHelper.isDynamicTyped(cs.getExceptionType())) {
             cs.getVariable().setType(ClassHelper.make(Exception.class));
         }
         super.visitCatchStatement(cs);
@@ -1565,46 +1602,37 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
                 continue;
             }
 
-            ClassNode classNode = type.getType();
             String name = type.getName();
+            ClassNode typeType = type.getType();
             GenericsTypeName gtn = new GenericsTypeName(name);
-            ClassNode[] bounds = type.getUpperBounds();
-            boolean isWild = QUESTION_MARK.equals(name);
-            boolean toDealWithGenerics = 0 == level || (level > 0 && null != genericParameterNames.get(gtn));
+            boolean isWildcardGT = QUESTION_MARK.equals(name);
+            boolean dealWithGenerics = (level == 0 || (level > 0 && genericParameterNames.get(gtn) != null));
 
-            if (bounds != null) {
+            if (type.getUpperBounds() != null) {
                 boolean nameAdded = false;
-                for (ClassNode upperBound : bounds) {
-                    if (!isWild) {
-                        if (!nameAdded && upperBound != null || !resolve(classNode)) {
-                            if (toDealWithGenerics) {
-                                genericParameterNames.put(gtn, type);
+                for (ClassNode upperBound : type.getUpperBounds()) {
+                    if (upperBound == null) continue;
+
+                    if (!isWildcardGT) {
+                        if (!nameAdded || !resolve(typeType)) {
+                            if (dealWithGenerics) {
                                 type.setPlaceholder(true);
-                                classNode.setRedirect(upperBound);
+                                typeType.setRedirect(upperBound);
+                                genericParameterNames.put(gtn, type);
                                 nameAdded = true;
                             }
                         }
-
-                        upperBoundsToResolve.add(tuple(upperBound, classNode));
+                        upperBoundsToResolve.add(tuple(upperBound, typeType));
                     }
-
-                    if (upperBound != null && upperBound.isUsingGenerics()) {
+                    if (upperBound.isUsingGenerics()) {
                         upperBoundsWithGenerics.add(tuple(upperBound, type));
                     }
                 }
-            } else {
-                if (!isWild) {
-                    if (toDealWithGenerics) {
-                        GenericsType originalGt = genericParameterNames.get(gtn);
-                        genericParameterNames.put(gtn, type);
-                        type.setPlaceholder(true);
-
-                        if (null == originalGt) {
-                            classNode.setRedirect(ClassHelper.OBJECT_TYPE);
-                        } else {
-                            classNode.setRedirect(originalGt.getType());
-                        }
-                    }
+            } else if (!isWildcardGT) {
+                if (dealWithGenerics) {
+                    type.setPlaceholder(true);
+                    GenericsType last = genericParameterNames.put(gtn, type);
+                    typeType.setRedirect(last != null ? last.getType().redirect() : ClassHelper.OBJECT_TYPE);
                 }
             }
         }
@@ -1628,6 +1656,7 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
         ClassNode type = genericsType.getType();
         // save name before redirect
         GenericsTypeName name = new GenericsTypeName(type.getName());
+        visitTypeAnnotations(type);
         ClassNode[] bounds = genericsType.getUpperBounds();
         if (!genericParameterNames.containsKey(name)) {
             if (bounds != null) {

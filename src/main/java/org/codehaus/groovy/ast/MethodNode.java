@@ -142,7 +142,7 @@ public class MethodNode extends AnnotatedNode {
 
     public void setReturnType(ClassNode returnType) {
         invalidateCachedData();
-        this.dynamicReturnType |= ClassHelper.DYNAMIC_TYPE == returnType;
+        this.dynamicReturnType |= ClassHelper.isDynamicTyped(returnType);
         this.returnType = returnType != null ? returnType : ClassHelper.OBJECT_TYPE;
     }
 
@@ -151,7 +151,7 @@ public class MethodNode extends AnnotatedNode {
     }
 
     public boolean isVoidMethod() {
-        return ClassHelper.VOID_TYPE.equals(getReturnType());
+        return ClassHelper.isPrimitiveVoid(getReturnType());
     }
 
     public VariableScope getVariableScope() {

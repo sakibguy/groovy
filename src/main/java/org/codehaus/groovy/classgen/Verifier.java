@@ -114,6 +114,11 @@ import static org.codehaus.groovy.ast.tools.GenericsUtils.addMethodGenerics;
 import static org.codehaus.groovy.ast.tools.GenericsUtils.correctToGenericsSpec;
 import static org.codehaus.groovy.ast.tools.GenericsUtils.createGenericsSpec;
 import static org.codehaus.groovy.ast.tools.PropertyNodeUtils.adjustPropertyModifiersForMethod;
+import static org.codehaus.groovy.ast.ClassHelper.isObjectType;
+import static org.codehaus.groovy.ast.ClassHelper.isPrimitiveBoolean;
+import static org.codehaus.groovy.ast.ClassHelper.isPrimitiveDouble;
+import static org.codehaus.groovy.ast.ClassHelper.isPrimitiveLong;
+import static org.codehaus.groovy.ast.ClassHelper.isWrapperBoolean;
 
 /**
  * Verifies the AST node and adds any default AST code before bytecode generation occurs.
@@ -193,7 +198,7 @@ public class Verifier implements GroovyClassVisitor, Opcodes {
             return ret;
         }
         ClassNode current = node;
-        while (current != ClassHelper.OBJECT_TYPE) {
+        while (!(isObjectType(current))) {
             current = current.getSuperClass();
             if (current == null) break;
             ret = current.getDeclaredField("metaClass");
@@ -318,7 +323,7 @@ public class Verifier implements GroovyClassVisitor, Opcodes {
         FieldNode ret = node.getDeclaredField(fieldName);
         if (ret != null) {
             if (isPublic(ret.getModifiers()) &&
-                    ret.getType().redirect() == ClassHelper.boolean_TYPE) {
+                    isPrimitiveBoolean(ret.getType().redirect())) {
                 return ret;
             }
             throw new RuntimeParserException("The class " + node.getName() +
@@ -644,10 +649,10 @@ public class Verifier implements GroovyClassVisitor, Opcodes {
             Parameter[] params = node.getParameters();
             if (params.length == 1) {
                 Parameter param = params[0];
-                if (param.getType() == null || param.getType() == ClassHelper.OBJECT_TYPE) {
+                if (param.getType() == null || isObjectType(param.getType())) {
                     param.setType(ClassHelper.STRING_TYPE.makeArray());
                     ClassNode returnType = node.getReturnType();
-                    if (returnType == ClassHelper.OBJECT_TYPE) {
+                    if (isObjectType(returnType)) {
                         node.setReturnType(ClassHelper.VOID_TYPE);
                     }
                 }
@@ -690,7 +695,7 @@ public class Verifier implements GroovyClassVisitor, Opcodes {
         Statement getterBlock = node.getGetterBlock();
         if (getterBlock == null) {
             MethodNode getter = classNode.getGetterMethod(getterName, !node.isStatic());
-            if (getter == null && ClassHelper.boolean_TYPE == node.getType()) {
+            if (getter == null && isPrimitiveBoolean(node.getType())) {
                 String secondGetterName = "is" + capitalize(name);
                 getter = classNode.getGetterMethod(secondGetterName);
             }
@@ -715,7 +720,7 @@ public class Verifier implements GroovyClassVisitor, Opcodes {
         if (getterBlock != null) {
             visitGetter(node, field, getterBlock, getterModifiers, getterName);
 
-            if (node.getGetterName() == null && getterName.startsWith("get") && (node.getType().equals(ClassHelper.boolean_TYPE) || node.getType().equals(ClassHelper.Boolean_TYPE))) {
+            if (node.getGetterName() == null && getterName.startsWith("get") && (isPrimitiveBoolean(node.getType()) || isWrapperBoolean(node.getType()))) {
                 String altGetterName = "is" + capitalize(name);
                 MethodNode altGetter = classNode.getGetterMethod(altGetterName, !node.isStatic());
                 if (methodNeedsReplacement(altGetter)) {
@@ -1453,8 +1458,8 @@ public class Verifier implements GroovyClassVisitor, Opcodes {
                         for (int i = 0, n = para.length; i < n; i += 1) {
                             ClassNode type = para[i].getType();
                             BytecodeHelper.load(mv, type, i + 1 + doubleSlotOffset);
-                            if (type.redirect() == ClassHelper.double_TYPE
-                                    || type.redirect() == ClassHelper.long_TYPE) {
+                            if (isPrimitiveDouble(type.redirect())
+                                    || isPrimitiveLong(type.redirect())) {
                                 doubleSlotOffset += 1;
                             }
                             if (!type.equals(goal[i].getType())) {
