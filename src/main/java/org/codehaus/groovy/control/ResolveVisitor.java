@@ -1490,7 +1490,7 @@ public class ResolveVisitor extends ClassCodeExpressionTransformer {
             for (GenericsType gt : node.getGenericsTypes()) {
                 if (gt != null && gt.getUpperBounds() != null) {
                     for (ClassNode variant : gt.getUpperBounds()) {
-                        if (variant.isGenericsPlaceHolder()) checkCyclicInheritance(gt.getType().redirect(), variant);
+                        if (variant.isGenericsPlaceHolder()) checkCyclicInheritance(variant, gt.getType());
                     }
                 }
             }
