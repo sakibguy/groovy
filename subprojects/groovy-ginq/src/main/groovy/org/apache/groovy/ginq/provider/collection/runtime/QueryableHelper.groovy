@@ -19,10 +19,14 @@
 package org.apache.groovy.ginq.provider.collection.runtime
 
 import groovy.transform.CompileStatic
+import groovy.transform.Internal
 
+import java.util.concurrent.Callable
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ForkJoinPool
+import java.util.concurrent.ForkJoinTask
 import java.util.concurrent.TimeUnit
 import java.util.function.Function
 import java.util.function.Supplier
@@ -34,6 +38,7 @@ import static org.apache.groovy.ginq.provider.collection.runtime.Queryable.from
  *
  * @since 4.0.0
  */
+@Internal
 @CompileStatic
 class QueryableHelper {
     /**
@@ -83,6 +88,10 @@ class QueryableHelper {
         return CompletableFuture.supplyAsync(() -> { function.apply(param) }, ThreadPoolHolder.THREAD_POOL)
     }
 
+    static <T> ForkJoinTask<T> submit(Callable<T> callable) {
+        return ThreadPoolHolder.FORKJOIN_POOL.submit(callable)
+    }
+
     static boolean isParallel() {
         return TRUE_STR == getVar(PARALLEL)
     }
@@ -95,7 +104,7 @@ class QueryableHelper {
         (T) VAR_HOLDER.get().get(name)
     }
 
-    static <T> T  removeVar(String name) {
+    static <T> T removeVar(String name) {
         (T) VAR_HOLDER.get().remove(name)
     }
 
@@ -103,23 +112,27 @@ class QueryableHelper {
      * Shutdown to release resources
      *
      * @param mode 0: immediate, 1: abort
-     * @return list of tasks that never commenced execution
      */
-    static List<Runnable> shutdown(int mode) {
+    static void shutdown(int mode) {
         if (0 == mode) {
+            ThreadPoolHolder.FORKJOIN_POOL.shutdown()
             ThreadPoolHolder.THREAD_POOL.shutdown()
+
+            while (!ThreadPoolHolder.FORKJOIN_POOL.awaitTermination(250, TimeUnit.MILLISECONDS)) {
+                // do nothing, just wait to terminate
+            }
             while (!ThreadPoolHolder.THREAD_POOL.awaitTermination(250, TimeUnit.MILLISECONDS)) {
                 // do nothing, just wait to terminate
             }
-            return Collections.emptyList()
         } else if (1 == mode) {
-            return ThreadPoolHolder.THREAD_POOL.shutdownNow()
+            ThreadPoolHolder.FORKJOIN_POOL.shutdownNow()
+            ThreadPoolHolder.THREAD_POOL.shutdownNow()
         } else {
             throw new IllegalArgumentException("Invalid mode: $mode")
         }
     }
 
-    private static final ThreadLocal<Map<String, Object>> VAR_HOLDER = ThreadLocal.<Map<String, Object>> withInitial(() -> new LinkedHashMap<>())
+    private static final ThreadLocal<Map<String, Object>> VAR_HOLDER = InheritableThreadLocal.<Map<String, Object>> withInitial(() -> new LinkedHashMap<>())
     private static final String PARALLEL = "parallel"
     private static final String TRUE_STR = "true"
 
@@ -127,12 +140,13 @@ class QueryableHelper {
 
     private static class ThreadPoolHolder {
         static int seq
-        static final ExecutorService THREAD_POOL = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(), (Runnable r) -> {
+        static final ExecutorService THREAD_POOL = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() + 1, (Runnable r) -> {
             Thread t = new Thread(r)
             t.setName("ginq-thread-" + seq++)
             t.setDaemon(true)
             return t
         })
+        static final ForkJoinPool FORKJOIN_POOL = new ForkJoinPool(Runtime.getRuntime().availableProcessors() + 1)
         private ThreadPoolHolder() {}
     }
 }
