@@ -235,6 +235,114 @@ class GinqTest {
     }
 
     @Test
+    void "testGinq - from select distinct - 1"() {
+        assertGinqScript '''
+// tag::ginq_distinct_1[]
+            def result = GQ {
+                from n in [1, 2, 2, 3, 3, 3]
+                select distinct(n)
+            }
+            assert [1, 2, 3] == result.toList()
+// end::ginq_distinct_1[]
+        '''
+    }
+
+    @Test
+    void "testGinq - from select distinct - 2"() {
+        assertGinqScript '''
+// tag::ginq_distinct_2[]
+            def result = GQ {
+                from n in [1, 2, 2, 3, 3, 3]
+                select distinct(n, n + 1)
+            }
+            assert [[1, 2], [2, 3], [3, 4]] == result.toList()
+// end::ginq_distinct_2[]
+        '''
+    }
+
+    @Test
+    void "testGinq - from select distinct - 3"() {
+        assertGinqScript '''
+            def result = GQ {
+                from v in (
+                    from n in [1, 2, 2, 3, 3, 3]
+                    select distinct(n)
+                )
+                select v
+            }
+            assert [1, 2, 3] == result.toList()
+        '''
+    }
+
+    @Test
+    void "testGinq - from select distinct - 4"() {
+        assertGinqScript '''
+            def result = GQ {
+                from v in (
+                    from n in [1, 2, 2, 3, 3, 3]
+                    select distinct(n)
+                )
+                join m in [1, 1, 2, 2, 3, 3] on m == v
+                select v, m
+            }
+            assert [[1, 1], [1, 1], [2, 2], [2, 2], [3, 3], [3, 3]] == result.toList()
+        '''
+    }
+
+    @Test
+    void "testGinq - from select distinct - 5"() {
+        assertGinqScript '''
+            def result = GQ {
+                from v in (
+                    from n in [1, 2, 2, 3, 3, 3]
+                    select distinct(n)
+                )
+                join m in [1, 1, 2, 2, 3, 3] on m == v
+                select distinct(v, m)
+            }
+            assert [[1, 1], [2, 2], [3, 3]] == result.toList()
+        '''
+    }
+
+    @Test
+    void "testGinq - from select distinct - 6"() {
+        assertGinqScript '''
+            def result = GQ {
+                from n in [1, 2, 3, 4]
+                groupby n % 2 as x
+                orderby x
+                select distinct(x, count(x))
+            }
+            assert [[0, 2], [1, 2]] == result.toList()
+        '''
+    }
+
+    @Test
+    void "testGinq - from select distinct - 7"() {
+        assertGinqScript '''
+            def result = GQ {
+                from n in [1, 2, 3, 4]
+                groupby n % 2 as x
+                orderby x
+                select distinct(x)
+            }
+            assert [0, 1] == result.toList()
+        '''
+    }
+
+    @Test
+    void "testGinq - from select distinct - 8"() {
+        assertGinqScript '''
+            def result = GQ {
+                from n in [1, 2, 3, 4]
+                groupby n % 2 as x
+                select distinct(count(x))
+            }
+            assert [2] == result.toList()
+        '''
+    }
+
+    @Test
     void "testGinq - from where select - 1"() {
         assertGinqScript '''
             def numbers = [0, 1, 2, 3, 4, 5]
@@ -5321,7 +5429,7 @@ class GinqTest {
                 from n in [1, 1, 2, 2, 3, 3]
                 select n, (count() over(partitionby n)),
                           (count(n) over(partitionby n)),
-                          (sum(n) over(partitionby n)), 
+                          (sum(n) over(partitionby n)),
                           (avg(n) over(partitionby n)),
                           (median(n) over(partitionby n))
             }.toList()
@@ -5894,6 +6002,42 @@ class GinqTest {
                     (denseRank() over(orderby n)),
                     (percentRank() over(orderby n)),
                     (cumeDist() over(orderby n))
+            }.toList()
+        '''
+    }
+
+    @Test
+    void "testGinq - window - 88"() {
+        assertGinqScript '''
+            assert [[1, 3], [2, 3]] == GQ {
+                from n in [1, 2]
+                select n,
+                    (agg(_g.stream().map(r -> r.n).reduce(BigDecimal.ZERO, BigDecimal::add)) over())
+            }.toList()
+        '''
+    }
+
+    @Test
+    void "testGinq - window - 89"() {
+        assertGinqScript '''
+// tag::ginq_winfunction_42[]
+            assert [[1, 4], [2, 2], [3, 4]] == GQ {
+                from n in [1, 2, 3]
+                select n,
+                       (agg(_g.stream().map(r -> r.n).reduce(BigDecimal.ZERO, BigDecimal::add)) over(partitionby n % 2))
+            }.toList()
+// end::ginq_winfunction_42[]
+        '''
+    }
+
+    @Test
+    void "testGinq - window - 90"() {
+        assertGinqScript'''
+            assert [[1, 4], [2, 2], [3, 4]] == GQ {
+                from n in [1, 2, 3]
+                join m in [1, 2, 3] on m == n
+                select n,
+                       (agg(_g.stream().map(r -> r.n).reduce(BigDecimal.ZERO, BigDecimal::add)) over(partitionby n % 2))
             }.toList()
         '''
     }
