@@ -19,6 +19,7 @@
 package groovy.console.ui
 
 import groovy.transform.AutoFinal
+import groovy.transform.CompileDynamic
 import groovy.transform.CompileStatic
 import org.apache.groovy.io.StringBuilderWriter
 import org.codehaus.groovy.ast.AnnotationNode
@@ -638,7 +639,7 @@ class AstNodeToScriptVisitor implements CompilationUnit.IPrimaryClassNodeOperati
             statement?.caseStatements?.each {
                 visitCaseStatement it
             }
-            if (statement?.defaultStatement) {
+            if (statement?.defaultStatement !instanceof EmptyStatement) {
                 print 'default: '
                 printLineBreak()
                 statement?.defaultStatement?.visit this
@@ -680,11 +681,7 @@ class AstNodeToScriptVisitor implements CompilationUnit.IPrimaryClassNodeOperati
     @Override
     void visitMethodCallExpression(MethodCallExpression expression) {
         Expression objectExpr = expression.objectExpression
-        if (objectExpr instanceof VariableExpression) {
-            visitVariableExpression(objectExpr, false)
-        } else {
-            objectExpr.visit(this)
-        }
+        printExpression(objectExpr)
         if (expression.spreadSafe) {
             print '*'
         }
@@ -726,12 +723,21 @@ class AstNodeToScriptVisitor implements CompilationUnit.IPrimaryClassNodeOperati
 
     @Override
     void visitBinaryExpression(BinaryExpression expression) {
-        expression?.leftExpression?.visit this
+        if (expression !instanceof DeclarationExpression && expression?.leftExpression instanceof VariableExpression) {
+            visitVariableExpression((VariableExpression) expression?.leftExpression, false)
+        } else {
+            expression?.leftExpression?.visit this
+        }
         if (!(expression.rightExpression instanceof EmptyExpression) || expression.operation.type != Types.ASSIGN) {
-            print " $expression.operation.text "
+            String opText = expression?.operation?.text
+            boolean isSubscriptOp = opText == '['
+            if (isSubscriptOp) {
+                print "["
+            } else {
+                print " $opText "
+            }
             expression.rightExpression.visit this
-
-            if (expression?.operation?.text == '[') {
+            if (isSubscriptOp) {
                 print ']'
             }
         }
@@ -739,18 +745,26 @@ class AstNodeToScriptVisitor implements CompilationUnit.IPrimaryClassNodeOperati
 
     @Override
     void visitPostfixExpression(PostfixExpression expression) {
-        print '('
-        expression?.expression?.visit this
-        print ')'
+        if (expression?.expression instanceof VariableExpression) {
+            visitVariableExpression((VariableExpression) expression?.expression, false)
+        } else {
+            print '('
+            expression?.expression?.visit this
+            print ')'
+        }
         print expression?.operation?.text
     }
 
     @Override
     void visitPrefixExpression(PrefixExpression expression) {
         print expression?.operation?.text
-        print '('
-        expression?.expression?.visit this
-        print ')'
+        if (expression?.expression instanceof VariableExpression) {
+            visitVariableExpression((VariableExpression) expression?.expression, false)
+        } else {
+            print '('
+            expression?.expression?.visit this
+            print ')'
+        }
     }
 
     @Override
@@ -769,7 +783,7 @@ class AstNodeToScriptVisitor implements CompilationUnit.IPrimaryClassNodeOperati
 
     @Override
     void visitLambdaExpression(LambdaExpression expression) {
-        print '( '
+        print '('
         if (expression?.parameters) {
             visitParameters(expression?.parameters)
         }
@@ -799,7 +813,8 @@ class AstNodeToScriptVisitor implements CompilationUnit.IPrimaryClassNodeOperati
 
     @Override
     void visitPropertyExpression(PropertyExpression expression) {
-        expression?.objectExpression?.visit this
+        printExpression(expression?.objectExpression)
+
         if (expression?.spreadSafe) {
             print '*'
         } else if (expression?.isSafe()) {
@@ -838,8 +853,8 @@ class AstNodeToScriptVisitor implements CompilationUnit.IPrimaryClassNodeOperati
         print expression.text
     }
 
+    @Override
     void visitVariableExpression(VariableExpression expression, boolean spacePad = true) {
-
         if (spacePad) {
             print ' ' + expression.name + ' '
         } else {
@@ -876,35 +891,57 @@ class AstNodeToScriptVisitor implements CompilationUnit.IPrimaryClassNodeOperati
         expression?.expression?.visit this
     }
 
+    @CompileDynamic
+    private void printUnaryExpression(String opText, Expression expression) {
+        print opText
+        if (expression?.expression instanceof VariableExpression) {
+            visitVariableExpression((VariableExpression) expression?.expression, false)
+        } else if (expression?.expression instanceof PropertyExpression)  {
+            expression?.expression?.visit this
+        } else {
+            print '('
+            expression?.expression?.visit this
+            print ')'
+        }
+    }
+
     @Override
     void visitNotExpression(NotExpression expression) {
-        print '!('
-        expression?.expression?.visit this
-        print ')'
+        printUnaryExpression('!', expression)
     }
 
     @Override
     void visitUnaryMinusExpression(UnaryMinusExpression expression) {
-        print '-('
-        expression?.expression?.visit this
-        print ')'
+        printUnaryExpression('-', expression)
     }
 
     @Override
     void visitUnaryPlusExpression(UnaryPlusExpression expression) {
-        print '+('
-        expression?.expression?.visit this
-        print ')'
+        printUnaryExpression('+', expression)
     }
 
     @Override
     void visitCastExpression(CastExpression expression) {
-        print '(('
-        expression?.expression?.visit this
-        print ') as '
-        visitType(expression?.type)
+        print '('
+        if (expression?.coerce) {
+            boolean isVariableExpressionOrPropertyExpression =
+                    expression?.expression instanceof VariableExpression || expression?.expression instanceof PropertyExpression
+            if (!isVariableExpressionOrPropertyExpression) {
+                print '('
+            }
+            printExpression(expression?.expression)
+            if (!isVariableExpressionOrPropertyExpression) {
+                print ')'
+            }
+            print ' as '
+            visitType(expression?.type)
+        } else {
+            print '('
+            visitType(expression?.type)
+            print ') '
+            printExpression(expression?.expression)
+        }
         print ')'
-
     }
 
     /**
@@ -992,13 +1029,15 @@ class AstNodeToScriptVisitor implements CompilationUnit.IPrimaryClassNodeOperati
         statement?.catchStatements?.each { CatchStatement catchStatement ->
             visitCatchStatement(catchStatement)
         }
-        print 'finally { '
-        printLineBreak()
-        indented {
-            statement?.finallyStatement?.visit this
+        if (statement?.finallyStatement !instanceof EmptyStatement) {
+            print 'finally { '
+            printLineBreak()
+            indented {
+                statement?.finallyStatement?.visit this
+            }
+            print '} '
+            printLineBreak()
         }
-        print '} '
-        printLineBreak()
     }
 
     @Override
@@ -1037,7 +1076,7 @@ class AstNodeToScriptVisitor implements CompilationUnit.IPrimaryClassNodeOperati
 
     @Override
     void visitBooleanExpression(BooleanExpression expression) {
-        expression?.expression?.visit this
+        printExpression(expression?.expression)
     }
 
     @Override
@@ -1103,6 +1142,9 @@ class AstNodeToScriptVisitor implements CompilationUnit.IPrimaryClassNodeOperati
         expression?.expressions?.each {
             if (!first) {
                 print ';'
+                if (it !instanceof EmptyExpression) {
+                    print ' '
+                }
             }
             first = false
             it.visit this
@@ -1168,5 +1210,13 @@ class AstNodeToScriptVisitor implements CompilationUnit.IPrimaryClassNodeOperati
             printLineBreak()
         }
         return true
+    }
+
+    private void printExpression(Expression expression) {
+        if (expression instanceof VariableExpression) {
+            visitVariableExpression((VariableExpression) expression, false)
+        } else {
+            expression?.visit this
+        }
     }
 }
