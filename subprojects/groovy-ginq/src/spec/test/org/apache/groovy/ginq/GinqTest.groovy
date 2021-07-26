@@ -4180,7 +4180,7 @@ class GinqTest {
     void "testGinq - asType - 1"() {
         assertGinqScript '''
             def result = GQ {from n in [1] select n} as Collection
-            assert result instanceof List
+            assert result instanceof Collection
             assert 1 == result[0]
         '''
     }
@@ -4218,7 +4218,7 @@ class GinqTest {
     void "testGinq - asType - 5"() {
         assertGinqScript '''
             def result = GQ {from n in [1] select n} as Iterable
-            assert result instanceof List
+            assert result instanceof Iterable
             assert 1 == result[0]
         '''
     }
@@ -4257,6 +4257,69 @@ class GinqTest {
         assertGinqScript '''
             def result = GQ {from n in [1] select n} as List
             assert result instanceof List
+            assert 1 == result[0]
+        '''
+    }
+
+    @Test
+    void "testGinq - asType - 10"() {
+        assertGinqScript '''
+            def result = GQ {from n in [1] select n} as ArrayList
+            assert result instanceof ArrayList
+            assert 1 == result[0]
+        '''
+    }
+
+    @Test
+    void "testGinq - asType - 11"() {
+        assertGinqScript '''
+            def result = GQ {from n in [1] select n} as LinkedList
+            assert result instanceof LinkedList
+            assert 1 == result[0]
+        '''
+    }
+
+    @Test
+    void "testGinq - asType - 12"() {
+        assertGinqScript '''
+            def result = GQ {from n in [1] select n} as HashSet
+            assert result instanceof HashSet
+            assert 1 == result[0]
+        '''
+    }
+
+    @Test
+    void "testGinq - asType - 13"() {
+        assertGinqScript '''
+            def result = GQ {from n in [1] select n} as TreeSet
+            assert result instanceof TreeSet
+            assert 1 == result[0]
+        '''
+    }
+
+    @Test
+    void "testGinq - asType - 14"() {
+        assertGinqScript '''
+            def result = GQ {from n in [1] select n} as LinkedHashSet
+            assert result instanceof LinkedHashSet
+            assert 1 == result[0]
+        '''
+    }
+
+    @Test
+    void "testGinq - asType - 15"() {
+        assertGinqScript '''
+            def result = GQ {from n in [1] select n} as Queue
+            assert result instanceof Queue
+            assert 1 == result[0]
+        '''
+    }
+
+    @Test
+    void "testGinq - asType - 16"() {
+        assertGinqScript '''
+            def result = GQ {from n in [1] select n} as Deque
+            assert result instanceof Deque
             assert 1 == result[0]
         '''
     }
@@ -6109,6 +6172,300 @@ class GinqTest {
                 }
             }.toList()
 // end::ginq_tips_13[]
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 0"() {
+        assertScript '''
+// tag::ginq_method_01[]
+            @groovy.ginq.transform.GQ
+            def ginq(list, b, e) {
+                from n in list
+                where b < n && n < e
+                select n
+            }
+            
+            assert [3, 4] == ginq([1, 2, 3, 4, 5, 6], 2, 5).toList()
+// end::ginq_method_01[]
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 1"() {
+        assertScript '''
+            import groovy.ginq.transform.GQ
+            
+            @GQ
+            def ginq(x) {
+                from n in [1, 2, 3]
+                where n < x
+                select n
+            }
+            
+            assert [1] == ginq(2).toList()
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 2"() {
+        assertScript '''
+            import groovy.ginq.transform.GQ
+            
+            class GinqClass {
+                @GQ
+                def ginq(x) {
+                    from n in [1, 2, 3]
+                    where n < x
+                    select n
+                }
+            }
+            
+            assert [1, 2] == new GinqClass().ginq(3).toList()
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 3"() {
+        assertScript '''
+            import groovy.ginq.transform.GQ
+            
+            class GinqClass {
+                static class Holder {
+                    @GQ
+                    def ginq(x) {
+                        from n in [1, 2, 3]
+                        where n < x
+                        select n
+                    }
+                }
+            }
+            
+            assert [1, 2] == new GinqClass.Holder().ginq(3).toList()
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 4"() {
+        assertScript '''
+            import groovy.ginq.transform.GQ
+            
+            @GQ(optimize=false)
+            def ginq(x) {
+                from n in [1, 2, 3]
+                where n < x
+                select n
+            }
+            
+            assert [1] == ginq(2).toList()
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 5"() {
+        assertScript '''
+// tag::ginq_method_02[]
+            import groovy.ginq.transform.GQ
+            
+            @GQ(parallel=true)
+            def ginq(x) {
+                from n in [1, 2, 3]
+                where n < x
+                select n
+            }
+            
+            assert [1] == ginq(2).toList()
+// end::ginq_method_02[]
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 6"() {
+        assertScript '''
+            import groovy.ginq.transform.GQ
+            
+            @GQ(astWalker='org.apache.groovy.ginq.provider.collection.GinqAstWalker')
+            def ginq(x) {
+                from n in [1, 2, 3]
+                where n < x
+                select n
+            }
+            
+            assert [1] == ginq(2).toList()
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 7"() {
+        assertScript '''
+            import groovy.ginq.transform.GQ
+            
+            @GQ(optimize=false, parallel=true)
+            def ginq(x) {
+                from n in [1, 2, 3]
+                where n < x
+                select n
+            }
+            
+            assert [1] == ginq(2).toList()
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 8"() {
+        assertScript '''
+            import groovy.ginq.transform.GQ
+            
+            @GQ(optimize=false, parallel=true, astWalker='org.apache.groovy.ginq.provider.collection.GinqAstWalker')
+            def ginq(x) {
+                from n in [1, 2, 3]
+                where n < x
+                select n
+            }
+            
+            assert [1] == ginq(2).toList()
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 9"() {
+        assertScript '''
+            import groovy.ginq.transform.GQ
+            
+            @GQ
+            def ginq1(x) {
+                from n in [1, 2, 3]
+                where n < x
+                select n
+            }
+            
+            @GQ
+            def ginq2(x) {
+                from n in [2, 3, 4]
+                where n > x
+                select n
+            }
+            
+            assert [1] == ginq1(2).toList()
+            assert [3, 4] == ginq2(2).toList()
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 10"() {
+        assertScript '''
+            import groovy.ginq.transform.GQ
+            
+            abstract class AbstractGinqClass {
+                abstract def ginq1(x)
+                abstract def ginq2(x)
+            }
+            
+            class GinqClass extends AbstractGinqClass {
+                @Override
+                @GQ
+                def ginq1(x) {
+                    from n in [1, 2, 3]
+                    where n < x
+                    select n
+                }
+                
+                @Override
+                @GQ
+                def ginq2(x) {
+                    from n in [2, 3, 4]
+                    where n > x
+                    select n
+                }
+            }
+            
+            def gc = new GinqClass()
+            assert [1] == gc.ginq1(2).toList()
+            assert [3, 4] == gc.ginq2(2).toList()
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 11"() {
+        assertScript '''
+            import groovy.ginq.transform.GQ
+            
+            class GinqClass {
+                private static final int F = 6
+                private int e = 3
+                
+                @GQ
+                def ginq(b) {
+                    from n in [1, 2, 3]
+                    where b < n && n < e
+                    select n + F
+                }
+            }
+            
+            assert [8] == new GinqClass().ginq(1).toList()
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 12"() {
+        assertScript '''
+            import groovy.ginq.transform.GQ
+            import groovy.transform.CompileStatic
+            import groovy.transform.CompileDynamic
+            
+            @CompileStatic
+            class GinqClass {
+                private static final int F = 6
+                private int e = 3
+                
+                List<Integer> biz(b) {
+                    (List<Integer>) ginq(b)
+                }
+                
+                @GQ(List)
+                @CompileDynamic
+                def ginq(b) {
+                    from n in [1, 2, 3]
+                    where b < n && n < e
+                    select n + F
+                }
+            }
+            
+            assert [8] == new GinqClass().ginq(1)
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 13"() {
+        assertScript '''
+// tag::ginq_method_03[]
+            import groovy.ginq.transform.GQ
+            
+            @GQ(List)
+            def ginq(b, e) {
+                from n in [1, 2, 3, 4, 5, 6]
+                where b < n && n < e
+                select n
+            }
+            
+            assert [3, 4] == ginq(2, 5)
+// end::ginq_method_03[]
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 14"() {
+        assertScript '''
+            import groovy.ginq.transform.GQ
+            
+            @GQ(value=List, parallel=true)
+            def ginq(b, e) {
+                from n in [1, 2, 3, 4, 5, 6]
+                where b < n && n < e
+                select n
+            }
+            
+            assert [3, 4] == ginq(2, 5)
         '''
     }
 

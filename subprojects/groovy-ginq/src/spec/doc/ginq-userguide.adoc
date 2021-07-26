@@ -87,6 +87,38 @@ def list = result.toList() // get the list from GINQ result
 [WARNING]
 Currently GINQ can not work well when STC is enabled.
 
+Also, GINQ could be written in a method marked with `@GQ`:
+```groovy
+@GQ
+def someGinqMethod() {
+    /* GINQ CODE */
+}
+```
+For example,
+
+* Mark the `ginq` method as a GINQ method with `@GQ` annotation:
+
+[source, groovy]
+----
+include::../test/org/apache/groovy/ginq/GinqTest.groovy[tags=ginq_method_01,indent=0]
+----
+
+* Specify the result type as `List`:
+
+[source, groovy]
+----
+include::../test/org/apache/groovy/ginq/GinqTest.groovy[tags=ginq_method_03,indent=0]
+----
+[NOTE]
+GINQ supports many result types, e.g. `List`, `Set`, `Collection`, `Iterable`, `Iterator`, `java.util.stream.Stream` and array types.
+
+* Enable parallel querying:
+
+[source, groovy]
+----
+include::../test/org/apache/groovy/ginq/GinqTest.groovy[tags=ginq_method_02,indent=0]
+----
+
 === GINQ Syntax
 ==== Data Source
 The data source for GINQ could be specified by `from` clause, which is equivalent to SQL's `FROM`.
