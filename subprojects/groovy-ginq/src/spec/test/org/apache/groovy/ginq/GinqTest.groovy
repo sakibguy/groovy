@@ -5055,6 +5055,58 @@ class GinqTest {
     }
 
     @Test
+    void "testGinq - parallel - 7"() {
+        assertScript '''
+            import java.util.concurrent.CountDownLatch
+            int cnt = 10
+            def ready = new CountDownLatch(cnt)
+            def cdl = new CountDownLatch(1)
+            def threads = (0..<cnt).collect { seq ->
+                Thread.start {
+                    ready.countDown()
+                    cdl.await()
+                    def result = GQ(optimize:false, parallel:true) {
+                        from n1 in 1..100_000
+                        join n2 in 1..100_000 on n2 == n1
+                        where n1 < 10 && n2 < 20
+                        select n1, n2
+                    }.toList()
+                    assert [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5], [6, 6], [7, 7], [8, 8], [9, 9]] == result
+                }
+            }
+            ready.await()
+            cdl.countDown()
+            threads*.join()
+        '''
+    }
+
+    @Test
+    void "testGinq - parallel - 8"() {
+        assertScript '''
+            import java.util.concurrent.CountDownLatch
+            int cnt = 10
+            def ready = new CountDownLatch(cnt)
+            def cdl = new CountDownLatch(1)
+            def threads = (0..<cnt).collect { seq ->
+                Thread.start {
+                    ready.countDown()
+                    cdl.await()
+                    def result = GQ(optimize:false, parallel:true) {
+                        from n1 in 1..1_000
+                        innerjoin n2 in 1..10_000 on n2 == n1
+                        where n1 < 10 && n2 < 20
+                        select n1, n2
+                    }.toList()
+                    assert [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5], [6, 6], [7, 7], [8, 8], [9, 9]] == result
+                }
+            }
+            ready.await()
+            cdl.countDown()
+            threads*.join()
+        '''
+    }
+
+    @Test
     void "testGinq - window - 0"() {
         assertGinqScript '''
 // tag::ginq_winfunction_01[]
@@ -6466,6 +6518,22 @@ class GinqTest {
             }
             
             assert [3, 4] == ginq(2, 5)
+        '''
+    }
+
+    @Test
+    void "testGinqMethod - GQ - 15"() {
+        assertScript '''
+            import groovy.ginq.transform.GQ
+            
+            @GQ(Set)
+            def ginq(b, e) {
+                from n in [1, 2, 3, 3, 4, 4, 5, 6]
+                where b < n && n < e
+                select n
+            }
+            
+            assert [3, 4] as Set == ginq(2, 5)
         '''
     }
 

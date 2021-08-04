@@ -54,6 +54,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BiFunction;
 import java.util.function.BiPredicate;
+import java.util.function.BinaryOperator;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collector;
@@ -120,11 +121,11 @@ class QueryableCollection<T> implements Queryable<T>, Serializable {
 
     @Override
     public <U> Queryable<Tuple2<T, U>> innerHashJoin(Queryable<? extends U> queryable, Function<? super T, ?> fieldsExtractor1, Function<? super U, ?> fieldsExtractor2) {
-        final ConcurrentObjectHolder<Map<Integer, List<Candidate<U>>>> hashTableHolder = new ConcurrentObjectHolder<>();
-        final Supplier<Map<Integer, List<Candidate<U>>>> hashTableSupplier = createHashTableSupplier(queryable, fieldsExtractor2);
+        final ConcurrentObjectHolder<Map<Integer, List<Candidate<U>>>> hashTableHolder = new ConcurrentObjectHolder<>(createHashTableSupplier(queryable, fieldsExtractor2));
+        if (isParallel()) hashTableHolder.getObject(); // avoid nested parallel querying, which results in deadlock sometimes
         Stream<Tuple2<T, U>> stream = this.stream().flatMap(p -> {
             // build hash table
-            Map<Integer, List<Candidate<U>>> hashTable = buildHashTable(hashTableHolder, hashTableSupplier);
+            Map<Integer, List<Candidate<U>>> hashTable = hashTableHolder.getObject();
 
             // probe the hash table
             return probeHashTable(hashTable, p, fieldsExtractor1);
@@ -156,17 +157,21 @@ class QueryableCollection<T> implements Queryable<T>, Serializable {
     }
 
     private static <U> Supplier<Map<Integer, List<Candidate<U>>>> createHashTableSupplier(Queryable<? extends U> queryable, Function<? super U, ?> fieldsExtractor2) {
-        return () -> queryable.stream()
-                .map(e -> new Candidate<U>(e, fieldsExtractor2.apply(e)))
-                .collect(
-                        Collectors.toMap(
-                                c -> hash(c.extracted),
-                                Bucket::singletonBucket,
-                                (oldBucket, newBucket) -> {
-                                    oldBucket.addAll(newBucket);
-                                    return oldBucket;
-                                }
-                        ));
+        return () -> {
+            Function<Candidate<U>, Integer> keyMapper = c -> hash(c.extracted);
+            Function<Candidate<U>, List<Candidate<U>>> valueMapper = Bucket::singletonBucket;
+            BinaryOperator<List<Candidate<U>>> mergeFunction = (oldBucket, newBucket) -> {
+                oldBucket.addAll(newBucket);
+                return oldBucket;
+            };
+            Collector<Candidate<U>, ?, ? extends Map<Integer, List<Candidate<U>>>> candidateMapCollector =
+                    isParallel() ? Collectors.toConcurrentMap(keyMapper, valueMapper, mergeFunction)
+                                 : Collectors.toMap(keyMapper, valueMapper, mergeFunction);
+            
+            return queryable.stream()
+                    .map(e -> new Candidate<U>(e, fieldsExtractor2.apply(e)))
+                    .collect(candidateMapCollector);
+        };
     }
 
     private static Integer hash(Object obj) {
@@ -298,41 +303,41 @@ class QueryableCollection<T> implements Queryable<T>, Serializable {
     public <U> Queryable<U> select(BiFunction<? super T, ? super Queryable<? extends T>, ? extends U> mapper) {
         final String originalParallel = QueryableHelper.getVar(PARALLEL);
         QueryableHelper.setVar(PARALLEL, FALSE_STR); // ensure the row number is generated sequentially
-        boolean useWindowFunction = TRUE_STR.equals(QueryableHelper.getVar(USE_WINDOW_FUNCTION));
-
-        if (useWindowFunction) {
-            this.makeReusable();
-        }
-
-        Stream<U> stream = null;
-        if (this instanceof Group) {
-            this.makeReusable();
-            if (0 == this.count()) {
-                stream = Stream.of((T) tuple(NULL, EMPTY_QUERYABLE)).map((T t) -> mapper.apply(t, this));
+        try {
+            boolean useWindowFunction = TRUE_STR.equals(QueryableHelper.getVar(USE_WINDOW_FUNCTION));
+            if (useWindowFunction) {
+                this.makeReusable();
             }
-        }
-        if (null == stream) {
-            stream = this.stream().map((T t) -> mapper.apply(t, this));
-        }
-
-        if (TRUE_STR.equals(originalParallel)) {
-            // invoke `collect` to trigger the intermediate operator, which will create `CompletableFuture` instances
-            stream = stream.collect(Collectors.toList()).parallelStream().map((U u) -> {
-                boolean interrupted = false;
-                try {
-                    return (U) ((CompletableFuture) u).get();
-                } catch (InterruptedException | ExecutionException ex) {
-                    if (ex instanceof InterruptedException) interrupted = true;
-                    throw new GroovyRuntimeException(ex);
-                } finally {
-                    if (interrupted) Thread.currentThread().interrupt();
+            Stream<U> stream = null;
+            if (this instanceof Group) {
+                this.makeReusable();
+                if (0 == this.count()) {
+                    stream = Stream.of((T) tuple(NULL, EMPTY_QUERYABLE)).map((T t) -> mapper.apply(t, this));
                 }
-            });
+            }
+            if (null == stream) {
+                stream = this.stream().map((T t) -> mapper.apply(t, this));
+            }
+
+            if (TRUE_STR.equals(originalParallel)) {
+                // invoke `collect` to trigger the intermediate operator, which will create `CompletableFuture` instances
+                stream = stream.collect(Collectors.toList()).parallelStream().map((U u) -> {
+                    boolean interrupted = false;
+                    try {
+                        return (U) ((CompletableFuture) u).get();
+                    } catch (InterruptedException | ExecutionException ex) {
+                        if (ex instanceof InterruptedException) interrupted = true;
+                        throw new GroovyRuntimeException(ex);
+                    } finally {
+                        if (interrupted) Thread.currentThread().interrupt();
+                    }
+                });
+            }
+
+            return from(stream);
+        } finally {
+            QueryableHelper.setVar(PARALLEL, originalParallel);
         }
-
-        QueryableHelper.setVar(PARALLEL, originalParallel);
-
-        return from(stream);
     }
 
     @Override
@@ -526,11 +531,11 @@ class QueryableCollection<T> implements Queryable<T>, Serializable {
     }
 
     private static <T, U> Queryable<Tuple2<T, U>> outerHashJoin(Queryable<? extends T> queryable1, Queryable<? extends U> queryable2, Function<? super T, ?> fieldsExtractor1, Function<? super U, ?> fieldsExtractor2) {
-        final ConcurrentObjectHolder<Map<Integer, List<Candidate<U>>>> hashTableHolder = new ConcurrentObjectHolder<>();
-        final Supplier<Map<Integer, List<Candidate<U>>>> hashTableSupplier = createHashTableSupplier(queryable2, fieldsExtractor2);
+        final ConcurrentObjectHolder<Map<Integer, List<Candidate<U>>>> hashTableHolder = new ConcurrentObjectHolder<>(createHashTableSupplier(queryable2, fieldsExtractor2));
+        if (isParallel()) hashTableHolder.getObject(); // avoid nested parallel querying, which results in deadlock sometimes
         Stream<Tuple2<T, U>> stream = queryable1.stream().flatMap(p -> {
             // build hash table
-            Map<Integer, List<Candidate<U>>> hashTable = buildHashTable(hashTableHolder, hashTableSupplier);
+            Map<Integer, List<Candidate<U>>> hashTable = hashTableHolder.getObject();
 
             // probe the hash table
             List<Tuple2<T, U>> joinResultList =
@@ -540,10 +545,6 @@ class QueryableCollection<T> implements Queryable<T>, Serializable {
         });
 
         return from(stream);
-    }
-
-    private static <U> Map<Integer, List<Candidate<U>>> buildHashTable(final ConcurrentObjectHolder<Map<Integer, List<Candidate<U>>>> hashTableHolder, final Supplier<Map<Integer, List<Candidate<U>>>> hashTableSupplier) {
-        return hashTableHolder.getObject(hashTableSupplier);
     }
 
     private static <T, U> Stream<Tuple2<T, U>> probeHashTable(Map<Integer, List<Candidate<U>>> hashTable, T p, Function<? super T, ?> fieldsExtractor1) {

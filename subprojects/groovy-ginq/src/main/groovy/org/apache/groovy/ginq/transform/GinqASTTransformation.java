@@ -45,8 +45,10 @@ import java.util.stream.Collectors;
 import static java.util.Collections.unmodifiableMap;
 import static org.apache.groovy.ginq.GinqGroovyMethods.CONF_LIST;
 import static org.apache.groovy.ginq.GinqGroovyMethods.transformGinqCode;
+import static org.codehaus.groovy.ast.ClassHelper.LIST_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.make;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.block;
+import static org.codehaus.groovy.ast.tools.GeneralUtils.callX;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.castX;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.constX;
 import static org.codehaus.groovy.ast.tools.GeneralUtils.mapX;
@@ -83,10 +85,18 @@ public class GinqASTTransformation extends AbstractASTTransformation {
                 }
             }
 
-            CastExpression castExpression = castX(targetType, transformGinqCode(sourceUnit, ginqConfigurationMapExpression, origCode));
-            castExpression.setCoerce(true);
+            Expression resultExpression = transformGinqCode(sourceUnit, ginqConfigurationMapExpression, origCode);
+            if (DEFAULT_RESULT_TYPE.equals(targetType)) { // same as `GQ {...}`
+                // DO NOTHING
+            } else if (LIST_TYPE.equals(targetType)) { // same as `GQL {...}`
+                resultExpression = callX(resultExpression, "toList");
+            } else { // same as `GQ {...} as TargetType`
+                CastExpression castExpression = castX(targetType, resultExpression);
+                castExpression.setCoerce(true);
+                resultExpression = castExpression;
+            }
 
-            BlockStatement newCode = block(stmt(castExpression));
+            BlockStatement newCode = block(stmt(resultExpression));
             newCode.setSourcePosition(origCode);
             methodNode.setCode(newCode);
             VariableScopeVisitor variableScopeVisitor = new VariableScopeVisitor(sourceUnit);
@@ -97,34 +107,27 @@ public class GinqASTTransformation extends AbstractASTTransformation {
     private MapExpression makeGinqConfigurationMapExpression(AnnotationNode annotationNode) {
         Map<String, Expression> resultMembers = new HashMap<>(DEFAULT_OPTION_MAP);
         Map<String, Expression> currentMembers = new HashMap<>(annotationNode.getMembers());
-        currentMembers.remove(VALUE);
         resultMembers.putAll(currentMembers);
+        resultMembers.remove(VALUE);
 
         return mapX(resultMembers.entrySet().stream()
                     .map(e -> new MapEntryExpression(constX(e.getKey()), constX(e.getValue().getText())))
                     .collect(Collectors.toList()));
     }
 
+    private static Object getDefaultOptionValue(String optionName) {
+        try {
+            return GQ_CLASS_NODE.getTypeClass().getMethod(optionName).getDefaultValue();
+        } catch (NoSuchMethodException e) {
+            throw new GroovyBugError("Unknown GINQ option: " + optionName, e);
+        }
+    }
+
     private static final String VALUE = "value";
     private static final ClassNode GQ_CLASS_NODE = make(GQ.class);
-    private static final ClassNode DEFAULT_RESULT_TYPE;
-    static {
-        Class<?> c;
-        try {
-            c = (Class<?>) GQ_CLASS_NODE.getTypeClass().getMethod(VALUE).getDefaultValue();
-        } catch (NoSuchMethodException e) {
-            throw new GroovyBugError(e);
-        }
-        DEFAULT_RESULT_TYPE = ClassHelper.make(c);
-    }
+    private static final ClassNode DEFAULT_RESULT_TYPE = ClassHelper.makeWithoutCaching((Class<?>) getDefaultOptionValue(VALUE));
     private static final Map<String, Expression> DEFAULT_OPTION_MAP = unmodifiableMap(CONF_LIST.stream().collect(Collectors.toMap(
             c -> c,
-            c -> {
-                try {
-                    return constX(GQ_CLASS_NODE.getTypeClass().getMethod(c).getDefaultValue());
-                } catch (NoSuchMethodException e) {
-                    throw new GroovyBugError("Unknown GINQ option: " + c, e);
-                }
-            }
+            c -> constX(getDefaultOptionValue(c))
     )));
 }
