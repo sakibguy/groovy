@@ -47,10 +47,12 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static java.util.stream.Collectors.toSet;
 import static org.apache.groovy.ast.tools.ClassNodeUtils.addGeneratedMethod;
 import static org.apache.groovy.util.BeanUtils.capitalize;
+import static org.codehaus.groovy.ast.ClassHelper.DEPRECATED_TYPE;
 import static org.codehaus.groovy.ast.ClassHelper.isGroovyObjectType;
 import static org.codehaus.groovy.ast.ClassHelper.isObjectType;
 import static org.codehaus.groovy.ast.ClassHelper.isPrimitiveBoolean;
@@ -89,7 +91,6 @@ public class DelegateASTTransformation extends AbstractASTTransformation {
     private static final Class<?> MY_CLASS = Delegate.class;
     private static final ClassNode MY_TYPE = make(MY_CLASS);
     private static final String MY_TYPE_NAME = "@" + MY_TYPE.getNameWithoutPackage();
-    private static final ClassNode DEPRECATED_TYPE = make(Deprecated.class);
     private static final ClassNode LAZY_TYPE = make(Lazy.class);
 
     private static final String MEMBER_DEPRECATED = "deprecated";
@@ -197,7 +198,10 @@ public class DelegateASTTransformation extends AbstractASTTransformation {
 
             if (skipInterfaces) return;
 
-            final Set<ClassNode> allInterfaces = getInterfacesAndSuperInterfaces(delegate.type);
+            final Set<ClassNode> allInterfaces =
+                    getInterfacesAndSuperInterfaces(delegate.type).stream()
+                            .filter(c -> !c.isSealed())
+                            .collect(Collectors.toSet());
             final Set<ClassNode> ownerIfaces = delegate.owner.getAllInterfaces();
             Map<String,ClassNode> genericsSpec = createGenericsSpec(delegate.owner);
             genericsSpec = createGenericsSpec(delegate.type, genericsSpec);

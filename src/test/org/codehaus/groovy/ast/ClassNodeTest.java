@@ -21,6 +21,8 @@ package org.codehaus.groovy.ast;
 import junit.framework.TestCase;
 import org.objectweb.asm.Opcodes;
 
+import static groovy.test.GroovyAssert.isAtLeastJdk;
+
 /**
  * Tests the ClassNode
  */
@@ -48,5 +50,23 @@ public class ClassNodeTest extends TestCase implements Opcodes {
 
         ClassNode packageNode = new ClassNode("com.acme.Foo", ACC_PUBLIC, ClassHelper.OBJECT_TYPE);
         assertEquals("Package", "com.acme", packageNode.getPackageName());
+    }
+
+    public void testPermittedSubclasses() throws ClassNotFoundException {
+        if (!isAtLeastJdk("17.0")) return;
+
+        Class<?> clazz = Class.forName("java.lang.constant.ConstantDesc");
+        ClassNode cn = new ClassNode(clazz);
+        assertTrue(!cn.getPermittedSubclasses().isEmpty());
+        assertTrue(cn.isSealed());
+
+        cn = ClassHelper.make(clazz);
+        assertTrue(!cn.getPermittedSubclasses().isEmpty());
+        assertTrue(cn.isSealed());
+
+        // some constructors of `ClassNode` will not trigger the lazy initialization
+//        cn = ClassHelper.make("java.lang.constant.ConstantDesc");
+//        assertTrue(!cn.getPermittedSubclasses().isEmpty());
+//        assertTrue(cn.isSealed());
     }
 }

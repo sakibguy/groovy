@@ -16,46 +16,29 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package groovy.ginq.transform;
+package groovy.transform;
 
-import org.apache.groovy.ginq.provider.collection.runtime.Queryable;
 import org.apache.groovy.lang.annotation.Incubating;
 import org.codehaus.groovy.transform.GroovyASTTransformationClass;
 
-import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Method annotation to make a method call returning GINQ result
+ * Class annotation used to assist in the creation of sealed classes.
  *
  * @since 4.0.0
  */
+@java.lang.annotation.Documented
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.TYPE})
 @Incubating
-@Documented
-@Retention(RetentionPolicy.SOURCE)
-@Target({ElementType.METHOD})
-@GroovyASTTransformationClass("org.apache.groovy.ginq.transform.GinqASTTransformation")
-public @interface GQ {
+@GroovyASTTransformationClass("org.codehaus.groovy.transform.SealedASTTransformation")
+public @interface Sealed {
     /**
-     * Specify the result type
+     * List of the permitted subclasses.
      */
-    Class<?> value() default Queryable.class;
-
-    /**
-     * Whether to optimize the GINQ AST
-     */
-    boolean optimize() default true;
-
-    /**
-     * Whether to enable parallel querying
-     */
-    boolean parallel() default false;
-
-    /**
-     * Specify the GINQ AST walker to customize GINQ behaviour
-     */
-    String astWalker() default "org.apache.groovy.ginq.provider.collection.GinqAstWalker";
+    Class[] permittedSubclasses() default {};
 }

@@ -27,6 +27,7 @@ import org.codehaus.groovy.ast.GenericsType;
 import org.codehaus.groovy.ast.MethodNode;
 import org.codehaus.groovy.ast.MixinNode;
 import org.codehaus.groovy.classgen.Verifier;
+import org.codehaus.groovy.reflection.ReflectionUtils;
 import org.objectweb.asm.Opcodes;
 
 import java.lang.reflect.Modifier;
@@ -170,6 +171,27 @@ public class DecompiledClassNode extends ClassNode {
     @Override
     public boolean isResolved() {
         return true;
+    }
+
+    @Override
+    public boolean isSealed() {
+        List<AnnotationStub> annotations = classData.annotations;
+        if (annotations != null) {
+            for (AnnotationStub stub : annotations) {
+                if (stub.className.equals("groovy.transform.Sealed")) {
+                    return true;
+                }
+            }
+        }
+        return isSealedSafe();
+    }
+
+    private boolean isSealedSafe() {
+        try {
+            return ReflectionUtils.isSealed(getTypeClass());
+        } catch (NoClassDefFoundError ignored) {
+        }
+        return false;
     }
 
     @Override
