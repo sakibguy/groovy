@@ -16,24 +16,22 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.codehaus.groovy.classgen.asm.sc
+package org.codehaus.groovy.transform.tailrec;
 
-import groovy.transform.stc.MiscSTCTest
+import org.codehaus.groovy.ast.expr.VariableExpression;
 
-/**
- * Unit tests for static type checking : miscellaneous tests.
- */
-class MiscStaticCompileTest extends MiscSTCTest implements StaticCompilationTestSupport {
+import java.util.LinkedHashSet;
+import java.util.Set;
 
-    void testEachFileRecurse() {
-        assertScript '''import groovy.io.FileType
-            File dir = File.createTempDir()
-            for(int i in 1..3){
-              new File(dir, "testEachFileRecurse${i}.txt").createNewFile()
-            }
-            dir.eachFileRecurse(FileType.FILES) { File spec ->
-            }
-            dir.deleteDir()
-        '''
+class UsedVariableTracker implements VariableReplacedListener {
+    @Override
+    public void variableReplaced(VariableExpression oldVar, VariableExpression newVar) {
+        usedVariableNames.add(newVar.getName());
     }
+
+    public Set<String> getUsedVariableNames() {
+        return usedVariableNames;
+    }
+
+    private final Set<String> usedVariableNames = new LinkedHashSet<>();
 }

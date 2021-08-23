@@ -16,24 +16,23 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.codehaus.groovy.classgen.asm.sc
+package groovy.bugs
 
-import groovy.transform.stc.MiscSTCTest
+import org.junit.Test
 
-/**
- * Unit tests for static type checking : miscellaneous tests.
- */
-class MiscStaticCompileTest extends MiscSTCTest implements StaticCompilationTestSupport {
+import static groovy.test.GroovyAssert.assertScript
 
-    void testEachFileRecurse() {
-        assertScript '''import groovy.io.FileType
-            File dir = File.createTempDir()
-            for(int i in 1..3){
-              new File(dir, "testEachFileRecurse${i}.txt").createNewFile()
-            }
-            dir.eachFileRecurse(FileType.FILES) { File spec ->
-            }
-            dir.deleteDir()
+final class Groovy10199 {
+    @Test
+    void testTransformClasspath() {
+        def shell = new GroovyShell()
+        shell.classLoader.addClasspath('gradle/wrapper/gradle-wrapper.jar')
+
+        assertScript shell, '''
+            @groovy.transform.ASTTest(value={
+                org.gradle.wrapper.WrapperConfiguration // Cannot get property 'gradle' on null object
+            })
+            def var = null
         '''
     }
 }

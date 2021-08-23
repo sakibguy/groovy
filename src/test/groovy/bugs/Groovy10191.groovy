@@ -16,24 +16,28 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.codehaus.groovy.classgen.asm.sc
+package groovy.bugs
 
-import groovy.transform.stc.MiscSTCTest
+import org.junit.Test
 
-/**
- * Unit tests for static type checking : miscellaneous tests.
- */
-class MiscStaticCompileTest extends MiscSTCTest implements StaticCompilationTestSupport {
+import static groovy.test.GroovyAssert.assertScript
 
-    void testEachFileRecurse() {
-        assertScript '''import groovy.io.FileType
-            File dir = File.createTempDir()
-            for(int i in 1..3){
-              new File(dir, "testEachFileRecurse${i}.txt").createNewFile()
+final class Groovy10191 {
+
+    static class Foo {
+        public static final BAR = 'baz'
+        static {
+            throw new NoSuchMethodError('simulate complex init')
+        }
+    }
+
+    @Test
+    void testStaticInlining() {
+        assertScript """
+            class C {
+                private static final x = ${getClass().getName()}.Foo.BAR
             }
-            dir.eachFileRecurse(FileType.FILES) { File spec ->
-            }
-            dir.deleteDir()
-        '''
+            assert true
+        """
     }
 }
