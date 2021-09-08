@@ -46,6 +46,7 @@ import javax.swing.border.Border;
 import javax.swing.text.BadLocationException;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
+import java.awt.Font;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -65,6 +66,8 @@ import java.util.Map;
  */
 public class LexerFrame extends JFrame implements ActionListener {
     private static final long serialVersionUID = 2715693043143492893L;
+    private static final Class<GroovyLexer> TOKEN_TYPES_CLASS = GroovyLexer.class;
+    private static final Font MONOSPACED_FONT = new Font("Monospaced", Font.PLAIN, 12);
     private final JSplitPane jSplitPane1 = new JSplitPane();
     private final JScrollPane jScrollPane1 = new JScrollPane();
     private final JScrollPane jScrollPane2 = new JScrollPane();
@@ -72,8 +75,8 @@ public class LexerFrame extends JFrame implements ActionListener {
     private final JButton jbutton = new JButton("open");
     private final JPanel mainPanel = new JPanel(new BorderLayout());
     private final JTextArea scriptPane = new JTextArea();
+    private final JLabel tokenStreamLabel = new JLabel(" Token Stream:");
     private final Map<Integer, String> tokens = new HashMap<>();
-    private static final Class<GroovyLexer> TOKEN_TYPES_CLASS = GroovyLexer.class;
 
     /**
      * Constructor used when invoking as a standalone application
@@ -200,9 +203,11 @@ public class LexerFrame extends JFrame implements ActionListener {
         final ButtonGroup bg = new ButtonGroup();
         Token token;
 
+        int tokenCnt = 0;
         while (true) {
             token = lexer.nextToken();
             JToggleButton tokenButton = new JToggleButton(tokens.get(token.getType()));
+            tokenButton.setFont(MONOSPACED_FONT);
             bg.add(tokenButton);
             tokenButton.addActionListener(this);
             tokenButton.setToolTipText(token.getText());
@@ -214,10 +219,13 @@ public class LexerFrame extends JFrame implements ActionListener {
                 line = token.getLine();
             }
             insertComponent(tokenButton);
+            tokenCnt++;
             if (eof().equals(token.getType())) {
                 break;
             }
         }
+
+        tokenStreamLabel.setText(" Token Stream(" + tokenCnt + "):");
 
         tokenPane.setEditable(false);
         tokenPane.setCaretPosition(0);
@@ -251,7 +259,7 @@ public class LexerFrame extends JFrame implements ActionListener {
         jSplitPane1.setOrientation(JSplitPane.VERTICAL_SPLIT);
         tokenPane.setEditable(false);
         tokenPane.setText("");
-        scriptPane.setFont(new java.awt.Font("DialogInput", 0, 12));
+        scriptPane.setFont(MONOSPACED_FONT);
         scriptPane.setEditable(false);
         scriptPane.setMargin(new Insets(5, 5, 5, 5));
         scriptPane.setText("");
@@ -268,7 +276,7 @@ public class LexerFrame extends JFrame implements ActionListener {
         jSplitPane1.add(jScrollPane2, JSplitPane.RIGHT);
         jScrollPane2.getViewport().add(scriptPane, null);
 
-        jScrollPane1.setColumnHeaderView(new JLabel(" Token Stream:"));
+        jScrollPane1.setColumnHeaderView(tokenStreamLabel);
         jScrollPane2.setColumnHeaderView(new JLabel(" Input Script:"));
         jSplitPane1.setResizeWeight(0.5);
     }
