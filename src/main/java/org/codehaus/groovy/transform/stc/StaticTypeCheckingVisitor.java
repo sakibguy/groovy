@@ -467,6 +467,10 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
         return Boolean.TRUE.equals(node.getNodeMetaData(StaticTypeCheckingVisitor.class)) || isSkipMode(node);
     }
 
+    protected boolean shouldSkipMethodNode(final MethodNode node) {
+        return Boolean.TRUE.equals(node.getNodeMetaData(StaticTypeCheckingVisitor.class)) || isSkipMode(node);
+    }
+
     public boolean isSkipMode(final AnnotatedNode node) {
         if (node == null) return false;
         for (ClassNode tca : getTypeCheckingAnnotations()) {
@@ -587,10 +591,6 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
         final Variable accessedVariable = vexp.getAccessedVariable();
         final TypeCheckingContext.EnclosingClosure enclosingClosure = typeCheckingContext.getEnclosingClosure();
 
-        if (accessedVariable == null) {
-            return;
-        }
-
         if (accessedVariable instanceof DynamicVariable) {
             // a dynamic variable is either a closure property, a class member referenced from a closure, or an undeclared variable
 
@@ -657,18 +657,18 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
                     }
                 }
             }
-        } else {
+        } else if (accessedVariable != null) {
             VariableExpression localVariable;
             if (accessedVariable instanceof Parameter) {
-                Parameter parameter = (Parameter) accessedVariable;
-                localVariable = new ParameterVariableExpression(parameter);
+                Parameter prm = (Parameter) accessedVariable;
+                localVariable = new ParameterVariableExpression(prm);
             } else {
                 localVariable = (VariableExpression) accessedVariable;
             }
 
             ClassNode inferredType = localVariable.getNodeMetaData(INFERRED_TYPE);
             inferredType = getInferredTypeFromTempInfo(localVariable, inferredType);
-            if (inferredType != null && !isObjectType(inferredType)) {
+            if (inferredType != null && !isObjectType(inferredType) && !inferredType.equals(accessedVariable.getType())) {
                 vexp.putNodeMetaData(INFERRED_RETURN_TYPE, inferredType);
             }
         }
@@ -685,7 +685,7 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
         if (vexp == VariableExpression.THIS_EXPRESSION) return true;
         if (!vexp.isThisExpression()) return false;
         // GROOVY-6904, GROOVY-9422: non-static inner class constructor call sets type
-        storeType(vexp, !OBJECT_TYPE.equals(vexp.getType()) ? vexp.getType() : makeThis());
+        storeType(vexp, !isObjectType(vexp.getType()) ? vexp.getType() : makeThis());
         return true;
     }
 
@@ -776,7 +776,11 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
                 lType = getType(leftExpression);
             } else {
                 if (op != ASSIGN && op != ELVIS_EQUAL) {
-                    lType = getType(leftExpression);
+                    if (leftExpression instanceof VariableExpression && hasInferredReturnType(leftExpression)) {
+                        lType = getInferredReturnType(leftExpression);
+                    } else {
+                        lType = getType(leftExpression);
+                    }
                 } else {
                     lType = getOriginalDeclarationType(leftExpression);
 
@@ -2160,18 +2164,6 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
     }
 
     @Override
-    protected void visitConstructorOrMethod(final MethodNode node, final boolean isConstructor) {
-        typeCheckingContext.pushEnclosingMethod(node);
-        if (!isSkipMode(node) && !shouldSkipMethodNode(node)) {
-            super.visitConstructorOrMethod(node, isConstructor);
-        }
-        if (!isConstructor) {
-            returnAdder.visitMethod(node); // return statement added after visitConstructorOrMethod finished... we can not count these auto-generated return statements(GROOVY-7753), see `typeCheckingContext.pushEnclosingReturnStatement`
-        }
-        typeCheckingContext.popEnclosingMethod();
-    }
-
-    @Override
     public void visitExpressionStatement(final ExpressionStatement statement) {
         typeCheckingContext.pushTemporaryTypeInfo();
         super.visitExpressionStatement(statement);
@@ -2552,14 +2544,17 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
         }
     }
 
-    protected boolean shouldSkipMethodNode(final MethodNode node) {
-        return Boolean.TRUE.equals(node.getNodeMetaData(StaticTypeCheckingVisitor.class));
+    @Override
+    public void visitConstructor(final ConstructorNode node) {
+        if (shouldSkipMethodNode(node)) {
+            return;
+        }
+        super.visitConstructor(node);
     }
 
     @Override
     public void visitMethod(final MethodNode node) {
         if (shouldSkipMethodNode(node)) {
-            // method has already been visited by a static type checking visitor
             return;
         }
         if (!extension.beforeVisitMethod(node)) {
@@ -2574,18 +2569,7 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
         extension.afterVisitMethod(node);
     }
 
-    @Override
-    public void visitConstructor(final ConstructorNode node) {
-        if (shouldSkipMethodNode(node)) {
-            // method has already been visited by a static type checking visitor
-            return;
-        }
-        super.visitConstructor(node);
-    }
-
     protected void startMethodInference(final MethodNode node, final ErrorCollector collector) {
-        if (isSkipMode(node)) return;
-
         // second, we must ensure that this method MUST be statically checked
         // for example, in a mixed mode where only some methods are statically checked
         // we must not visit a method which used dynamic dispatch.
@@ -2610,6 +2594,31 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
         }
         typeCheckingContext.popErrorCollector();
         node.putNodeMetaData(ERROR_COLLECTOR, collector);
+    }
+
+    @Override
+    protected void visitConstructorOrMethod(final MethodNode node, final boolean isConstructor) {
+        typeCheckingContext.pushEnclosingMethod(node);
+        super.visitConstructorOrMethod(node, isConstructor);
+        if (node.hasDefaultValue()) {
+            for (Parameter parameter : node.getParameters()) {
+                if (!parameter.hasInitialExpression()) continue;
+                // GROOVY-10094: visit param default argument expression
+                visitInitialExpression(parameter.getInitialExpression(), varX(parameter), parameter);
+                // GROOVY-10104: remove direct target setting to prevent errors
+                parameter.getInitialExpression().visit(new CodeVisitorSupport() {
+                    @Override
+                    public void visitMethodCallExpression(final MethodCallExpression mce) {
+                        super.visitMethodCallExpression(mce);
+                        mce.setMethodTarget(null);
+                    }
+                });
+            }
+        }
+        if (!isConstructor) {
+            returnAdder.visitMethod(node); // GROOVY-7753: we cannot count these auto-generated return statements, see `typeCheckingContext.pushEnclosingReturnStatement`
+        }
+        typeCheckingContext.popEnclosingMethod();
     }
 
     protected void addTypeCheckingInfoAnnotation(final MethodNode node) {
@@ -5020,7 +5029,7 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
                 return fieldType;
             }
             if (variable != vexp && variable instanceof VariableExpression) {
-                return getType((Expression) variable);
+                return getType((VariableExpression) variable);
             }
             if (variable instanceof Parameter) {
                 Parameter parameter = (Parameter) variable;
