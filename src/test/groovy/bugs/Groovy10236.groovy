@@ -1,5 +1,3 @@
-import groovy.transform.Sealed
-
 /*
  *  Licensed to the Apache Software Foundation (ASF) under one
  *  or more contributor license agreements.  See the NOTICE file
@@ -18,18 +16,22 @@ import groovy.transform.Sealed
  *  specific language governing permissions and limitations
  *  under the License.
  */
+package bugs
 
-sealed interface ShapeI permits Circle, Rectangle { }
-final class Circle implements ShapeI { }
-non-sealed class Rectangle implements ShapeI { }
-final class Square extends Rectangle { }
+import groovy.transform.CompileStatic
+import org.junit.Test
 
-def c = new Circle()
-def r = new Rectangle()
-def s = new Square()
-assert [c, r, s]*.class.name == ['Circle', 'Rectangle', 'Square']
+import static groovy.test.GroovyAssert.assertScript
 
-def shapeIAnnotations = ShapeI.class.annotations
-assert 1 == shapeIAnnotations.size()
-Sealed sealedAnnotation = (Sealed) shapeIAnnotations[0]
-assert [Circle.class, Rectangle.class] == sealedAnnotation.permittedSubclasses()
+@CompileStatic
+final class Groovy10236 {
+
+    @Test
+    void testOmittingParenthesesInLambdaBody() {
+        assertScript '''
+            def same(obj) { obj }
+            
+            assert ['1', '2', '3'] == [1, 2, 3].stream().map(num -> same "$num").toList()
+        '''
+    }
+}
