@@ -17,19 +17,4 @@
  *  under the License.
  */
 
-plugins {
-    id 'groovy-gradle-plugin'
-}
-
-repositories {
-    gradlePluginPortal()
-}
-
-dependencies {
-    implementation 'org.asciidoctor:asciidoctor-gradle-jvm:3.3.2'
-    implementation 'org.asciidoctor:asciidoctor-gradle-jvm-pdf:3.3.2'
-    implementation 'org.jfrog.buildinfo:build-info-extractor-gradle:4.17.2'
-    implementation 'org.nosphere.apache:creadur-rat-gradle:0.7.0'
-    implementation 'gradle.plugin.com.github.spotbugs.snom:spotbugs-gradle-plugin:4.6.0'
-    implementation 'me.champeau.gradle:jmh-gradle-plugin:0.5.2'
-}
+println switch (10) {}

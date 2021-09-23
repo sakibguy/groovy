@@ -16,20 +16,18 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+package bugs.groovy9236;
 
-plugins {
-    id 'groovy-gradle-plugin'
-}
+import groovy.lang.GroovyClassLoader;
 
-repositories {
-    gradlePluginPortal()
-}
+import java.util.ArrayList;
+import java.util.List;
 
-dependencies {
-    implementation 'org.asciidoctor:asciidoctor-gradle-jvm:3.3.2'
-    implementation 'org.asciidoctor:asciidoctor-gradle-jvm-pdf:3.3.2'
-    implementation 'org.jfrog.buildinfo:build-info-extractor-gradle:4.17.2'
-    implementation 'org.nosphere.apache:creadur-rat-gradle:0.7.0'
-    implementation 'gradle.plugin.com.github.spotbugs.snom:spotbugs-gradle-plugin:4.6.0'
-    implementation 'me.champeau.gradle:jmh-gradle-plugin:0.5.2'
+public class Groovy9236ClassLoader extends GroovyClassLoader {
+    final List<String> guessedClassNameList = new ArrayList<>();
+
+    protected Class<?> findClass(final String name) throws ClassNotFoundException {
+        guessedClassNameList.add(name);
+        return super.findClass(name);
+    }
 }

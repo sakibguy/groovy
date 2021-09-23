@@ -230,13 +230,11 @@ if (classDoc.isInterface()) {
 <% } %>
             <!-- todo: direct known subclasses -->
             <hr>
-            <br>
 <%
 def declaration = annotations(classDoc, '\n') +
     modifiersWithOptions(classDoc, classDoc.isGroovy(), classDoc.isInterface() || classDoc.isAnnotationType()) +
     classDoc.typeSourceDescription +
-    ' ' +
-    nameEncoded
+    " ${nameEncoded}"
 final interfaces = classDoc.interfaces().collect{ linkable(it) }.join(', ')
 if (classDoc.isInterface() && classDoc.interfaces()) {
     if (interfaces) {
@@ -249,7 +247,7 @@ if (classDoc.isInterface() && classDoc.interfaces()) {
     }
 }
 %>
-<pre>${declaration}</pre>
+<pre>${declaration?.replace('&nbsp;', ' ')}</pre>
 <% if (classDoc.commentText()) { %>
     <p>${classDoc.commentText()}</p>
 <% } %>
@@ -458,8 +456,7 @@ if (classDoc.isInterface() && classDoc.interfaces()) {
                         <% visibleConstructors.eachWithIndex { constructor, i -> %>
                         <tr class="${i%2==0?'altColor':'rowColor'}">
                             <td class="colFirst">
-                                <code>${modifiersBrief(constructor)}<a href="#${nameFromParams(constructor)}">${constructor.name()}</a>
-                                (${paramsOf(constructor, true)})</code><br>${constructor.firstSentenceCommentText()}</td>
+                                <code>${modifiersBrief(constructor)}<strong><a href="#${nameFromParams(constructor)}">${constructor.name()}</a></strong>(${paramsOf(constructor, true)})</code><br>${constructor.firstSentenceCommentText()}</td>
                         </tr>
                         <% } %>
                     </table>

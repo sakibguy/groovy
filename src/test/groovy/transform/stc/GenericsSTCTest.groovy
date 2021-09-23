@@ -2116,6 +2116,37 @@ class GenericsSTCTest extends StaticTypeCheckingTestCase {
         '''
     }
 
+    // GROOVY-10220
+    void testCompatibleArgumentsForPlaceholders3() {
+        assertScript '''
+            class C<S, T extends Number> {
+            }
+            class D<T> {
+                C<? extends T, Integer> f
+                D(C<? extends T, Integer> p) {
+                    f = p
+                }
+            }
+
+            assert new D<String>(null).f == null
+        '''
+    }
+
+    // GROOVY-10235
+    void testCompatibleArgumentsForPlaceholders4() {
+        assertScript '''
+            import static java.util.concurrent.ConcurrentHashMap.newKeySet
+
+            void accept(Collection<Integer> integers) {
+                assert integers
+            }
+
+            Set<Integer> integers = newKeySet()
+            integers.add(42)
+            accept(integers)
+        '''
+    }
+
     void testIncompatibleArgumentsForPlaceholders1() {
         shouldFailWithMessages '''
             def <T extends Number> T test(T one, T two) { }
@@ -2124,8 +2155,29 @@ class GenericsSTCTest extends StaticTypeCheckingTestCase {
         '#test(int, java.lang.String). Please check if the declared type is correct and if the method exists.'
     }
 
-    // GROOVY-9902: incomplete generics should not stop type checking
+    // GROOVY-7720
     void testIncompatibleArgumentsForPlaceholders2() {
+        shouldFailWithMessages '''
+            class Consumer<T> {
+                <U> void accept(U param) {
+                    T local = param
+                }
+            }
+        ''',
+        'Cannot assign value of type U to variable of type T'
+
+        shouldFailWithMessages '''
+            class Converter<T, U> {
+                U convert(T param) {
+                    return param
+                }
+            }
+        ''',
+        'Cannot return value of type T on method returning type U'
+    }
+
+    // GROOVY-9902: incomplete generics should not stop type checking
+    void testIncompatibleArgumentsForPlaceholders3() {
         shouldFailWithMessages '''
             class Holder<Unknown> {
                 TypedProperty<Number, Unknown> numberProperty = prop(Number)
