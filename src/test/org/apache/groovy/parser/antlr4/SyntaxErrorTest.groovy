@@ -192,10 +192,15 @@ final class SyntaxErrorTest extends GroovyTestCase {
     }
 
     void 'test groovy core - ClassDeclaration 1'() {
-        TestUtils.doRunAndShouldFail('fail/ClassDeclaration_02x.groovy')
+        TestUtils.doRunAndShouldFail('fail/ClassDeclaration_01x.groovy')
     }
 
     void 'test groovy core - ClassDeclaration 2'() {
+        TestUtils.doRunAndShouldFail('fail/ClassDeclaration_02x.groovy')
+    }
+
+
+    void 'test groovy core - ClassDeclaration 3'() {
         def err = expectParseError '''\
             |class C extends Object, Number {}
             |'''.stripMargin()
@@ -425,6 +430,17 @@ final class SyntaxErrorTest extends GroovyTestCase {
 
     void 'test groovy core - Trait'() {
         TestUtils.shouldFail('fail/Trait_01.groovy')
+    }
+
+    void 'test groovy core - Record'() {
+        TestUtils.doRunAndShouldFail('fail/RecordDeclaration_01x.groovy')
+        TestUtils.doRunAndShouldFail('fail/RecordDeclaration_02x.groovy')
+        TestUtils.doRunAndShouldFail('fail/RecordDeclaration_03x.groovy')
+        TestUtils.doRunAndShouldFail('fail/RecordDeclaration_04x.groovy')
+        TestUtils.doRunAndShouldFail('fail/RecordDeclaration_05x.groovy')
+        TestUtils.doRunAndShouldFail('fail/RecordDeclaration_06x.groovy')
+        TestUtils.doRunAndShouldFail('fail/RecordDeclaration_07x.groovy')
+        TestUtils.doRunAndShouldFail('fail/RecordDeclaration_08x.groovy')
     }
 
     void 'test groovy core - Array'() {

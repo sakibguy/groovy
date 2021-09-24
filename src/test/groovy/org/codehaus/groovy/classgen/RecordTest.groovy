@@ -16,14 +16,24 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package fail
+package org.codehaus.groovy.classgen
 
-class Person {
-    String name
-    int age
+import groovy.transform.CompileStatic
+import org.codehaus.groovy.control.CompilerConfiguration
+import org.junit.Test
 
-    public Person {
-        if (name == 'Devil') throw new IllegalArgumentException("Invalid person: $name")
-        if (age < 18) throw new IllegalArgumentException("Invalid age: $age")
+import static groovy.test.GroovyAssert.assertScript
+import static groovy.test.GroovyAssert.isAtLeastJdk
+import static org.junit.Assume.assumeTrue
+
+@CompileStatic
+class RecordTest {
+    @Test
+    void testRecordOnJDK16plus() {
+        assumeTrue(isAtLeastJdk('16.0'))
+        assertScript(new GroovyShell(new CompilerConfiguration(targetBytecode: CompilerConfiguration.JDK16)), '''
+            record RecordJDK16plus(String name) {}
+            assert java.lang.Record == RecordJDK16plus.class.getSuperclass()
+        ''')
     }
 }
