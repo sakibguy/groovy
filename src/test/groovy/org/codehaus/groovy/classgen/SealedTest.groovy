@@ -27,23 +27,36 @@ import static groovy.test.GroovyAssert.isAtLeastJdk
 import static org.junit.Assume.assumeTrue
 
 @CompileStatic
-class RecordTest {
+class SealedTest {
     @Test
-    void testRecordOnJDK16plus() {
-        assumeTrue(isAtLeastJdk('16.0'))
-        assertScript(new GroovyShell(new CompilerConfiguration(targetBytecode: CompilerConfiguration.JDK16)), '''
-            record RecordJDK16plus(String name) {}
-            assert java.lang.Record == RecordJDK16plus.class.getSuperclass()
+    void testInferredPermittedNestedClasses() {
+        assumeTrue(isAtLeastJdk('17.0'))
+        def config = new CompilerConfiguration(targetBytecode: CompilerConfiguration.JDK17)
+        List<Class> classes = (List<Class>) new GroovyShell(config).evaluate('''
+            import groovy.transform.Sealed
+
+            @Sealed class Shape {
+                final class Triangle extends Shape { }
+                final class Polygon extends Shape { }
+            }
+            Shape.getPermittedSubclasses()
         ''')
+        assert classes*.name == ['Shape$Triangle', 'Shape$Polygon']
     }
 
     @Test
-    void testRecordOnJDK16plusWhenDisabled() {
-        assumeTrue(isAtLeastJdk('16.0'))
-        def configuration = new CompilerConfiguration(targetBytecode: CompilerConfiguration.JDK16, recordsNative: false)
-        assertScript(new GroovyShell(configuration), '''
-            record RecordJDK16plus2(String name) {}
-            assert java.lang.Record != RecordJDK16plus2.class.getSuperclass()
+    void testInferredPermittedNestedClassesWithNativeDisabled() {
+        assumeTrue(isAtLeastJdk('17.0'))
+        def config = new CompilerConfiguration(targetBytecode: CompilerConfiguration.JDK17, sealedNative: false)
+        def classes = new GroovyShell(config).evaluate('''
+            import groovy.transform.Sealed
+
+            @Sealed class Shape {
+                final class Triangle extends Shape { }
+                final class Polygon extends Shape { }
+            }
+            Shape.getPermittedSubclasses()
         ''')
+        assert !classes
     }
 }
