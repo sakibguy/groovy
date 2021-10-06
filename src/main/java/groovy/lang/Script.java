@@ -54,7 +54,7 @@ public abstract class Script extends GroovyObjectSupport {
     public Object getProperty(String property) {
         try {
             return binding.getVariable(property);
-        } catch (MissingPropertyException e) {
+        } catch (MissingPropertyException mpe) {
             return super.getProperty(property);
         }
     }
@@ -76,11 +76,13 @@ public abstract class Script extends GroovyObjectSupport {
 
     private boolean hasSetterMethodFor(String property) {
         String setterName = GeneralUtils.getSetterName(property);
-        for (Method method : getClass().getDeclaredMethods()) {
-            if (method.getParameterCount() == 1
-                    // TODO: Test modifiers or return type?
-                    && method.getName().equals(setterName)) {
-                return true;
+        for (Class<?> c = getClass(); !c.equals(Script.class); c = c.getSuperclass()) {
+            for (Method method : c.getDeclaredMethods()) {
+                if (method.getParameterCount() == 1
+                        // TODO: Test modifiers or return type?
+                        && method.getName().equals(setterName)) {
+                    return true;
+                }
             }
         }
         return false;
@@ -97,15 +99,14 @@ public abstract class Script extends GroovyObjectSupport {
     public Object invokeMethod(String name, Object args) {
         try {
             return super.invokeMethod(name, args);
-        }
-        // if the method was not found in the current scope (the script's methods)
-        // let's try to see if there's a method closure with the same name in the binding
-        catch (MissingMethodException mme) {
+        } catch (MissingMethodException mme) {
+            // if the method was not found in the current scope (the script's methods)
+            // let's try to see if there's a method closure with the same name in the binding
             try {
                 if (name.equals(mme.getMethod())) {
                     Object boundClosure = getProperty(name);
                     if (boundClosure instanceof Closure) {
-                        return ((Closure) boundClosure).call((Object[])args);
+                        return ((Closure<?>) boundClosure).call((Object[]) args);
                     } else {
                         throw mme;
                     }
