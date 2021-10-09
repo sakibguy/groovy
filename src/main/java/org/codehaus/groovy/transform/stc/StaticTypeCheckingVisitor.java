@@ -866,7 +866,7 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
                     } else { // GROOVY-10235, et al.
                         Map<GenericsTypeName, GenericsType> gt = new HashMap<>();
                         extractGenericsConnections(gt, resultType, resultType.redirect());
-                        extractGenericsConnections(gt, lType, ClassHelper.getNextSuperClass(resultType, lType));
+                        extractGenericsConnections(gt, lType, getNextSuperClass(resultType, lType));
 
                         resultType = applyGenericsContext(gt, resultType.redirect());
                     }
@@ -1242,11 +1242,12 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
     }
 
     private void addListAssignmentConstructorErrors(final ClassNode leftRedirect, final ClassNode leftExpressionType, final ClassNode inferredRightExpressionType, final Expression rightExpression, final Expression assignmentExpression) {
+        if (isWildcardLeftHandSide(leftRedirect) && !isClassType(leftRedirect)) return; // GROOVY-6802, GROOVY-6803
         // if left type is not a list but right type is a list, then we're in the case of a groovy
         // constructor type : Dimension d = [100,200]
         // In that case, more checks can be performed
         if (!implementsInterfaceOrIsSubclassOf(LIST_TYPE, leftRedirect)
-                && (!leftRedirect.isAbstract() || leftRedirect.isArray()) && !isObjectType(leftRedirect)
+                && (!leftRedirect.isAbstract() || leftRedirect.isArray())
                 && !ArrayList_TYPE.isDerivedFrom(leftRedirect) && !LinkedHashSet_TYPE.isDerivedFrom(leftRedirect)) {
             ClassNode[] types = getArgumentTypes(args(((ListExpression) rightExpression).getExpressions()));
             MethodNode methodNode = checkGroovyStyleConstructor(leftRedirect, types, assignmentExpression);
@@ -1254,8 +1255,7 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
                 rightExpression.putNodeMetaData(DIRECT_METHOD_CALL_TARGET, methodNode);
             }
         } else if (implementsInterfaceOrIsSubclassOf(inferredRightExpressionType, LIST_TYPE)
-                && !implementsInterfaceOrIsSubclassOf(inferredRightExpressionType, leftRedirect)
-                && !isWildcardLeftHandSide(leftRedirect)) {
+                && !implementsInterfaceOrIsSubclassOf(inferredRightExpressionType, leftRedirect)) {
             if (!extension.handleIncompatibleAssignment(leftExpressionType, inferredRightExpressionType, assignmentExpression)) {
                 addAssignmentError(leftExpressionType, inferredRightExpressionType, assignmentExpression);
             }
@@ -1264,7 +1264,8 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
 
     private void addMapAssignmentConstructorErrors(final ClassNode leftRedirect, final Expression leftExpression, final Expression rightExpression) {
         if ((leftExpression instanceof VariableExpression && ((VariableExpression) leftExpression).isDynamicTyped())
-                || isObjectType(leftRedirect) || implementsInterfaceOrIsSubclassOf(leftRedirect, MAP_TYPE)) {
+                || (isWildcardLeftHandSide(leftRedirect) && !isClassType(leftRedirect)) // GROOVY-6802, GROOVY-6803
+                || implementsInterfaceOrIsSubclassOf(leftRedirect, MAP_TYPE)) {
             return;
         }
 
@@ -1428,11 +1429,11 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
                 ConstructorNode cn = new ConstructorNode(Opcodes.ACC_PUBLIC, new Parameter[]{new Parameter(LinkedHashMap_TYPE, "args")}, ClassNode.EMPTY_ARRAY, EmptyStatement.INSTANCE);
                 return cn;
             } else {
-                addStaticTypeError("No matching constructor found: " + node + toMethodParametersString("<init>", arguments), source);
+                addStaticTypeError("No matching constructor found: " + prettyPrintTypeName(node) + toMethodParametersString("", arguments), source);
                 return null;
             }
         } else if (constructorList.size() > 1) {
-            addStaticTypeError("Ambiguous constructor call " + node + toMethodParametersString("<init>", arguments), source);
+            addStaticTypeError("Ambiguous constructor call " + prettyPrintTypeName(node) + toMethodParametersString("", arguments), source);
             return null;
         }
         return constructorList.get(0);
@@ -3816,15 +3817,32 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
                 addTraitType(staticType, owners); // T in Class<T$Trait$Helper>
                 owners.add(Receiver.make(receiver)); // Class<Type>
             } else {
-                owners.add(Receiver.make(receiver));
+                addBoundType(receiver, owners);
                 addSelfTypes(receiver, owners);
                 addTraitType(receiver, owners);
-                if (receiver.isInterface()) {
+                if (receiver.redirect().isInterface()) {
                     owners.add(Receiver.make(OBJECT_TYPE));
                 }
             }
         }
         return owners;
+    }
+
+    private static void addBoundType(final ClassNode receiver, final List<Receiver<String>> owners) {
+        if (!receiver.isGenericsPlaceHolder() || receiver.getGenericsTypes() == null) {
+            owners.add(Receiver.make(receiver));
+            return;
+        }
+
+        GenericsType gt = receiver.getGenericsTypes()[0];
+        if (gt.getLowerBound() == null && gt.getUpperBounds() != null) {
+            for (ClassNode cn : gt.getUpperBounds()) { // T extends C & I
+                addBoundType(cn, owners);
+                addSelfTypes(cn, owners);
+            }
+        } else {
+            owners.add(Receiver.make(OBJECT_TYPE)); // T or T super Type
+        }
     }
 
     private static void addSelfTypes(final ClassNode receiver, final List<Receiver<String>> owners) {
@@ -4925,7 +4943,7 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
             }
         }
 
-        if (isClassType(receiver) && receiver.getGenericsTypes() != null) {
+        if (isClassClassNodeWrappingConcreteType(receiver)) {
             List<MethodNode> result = findMethod(receiver.getGenericsTypes()[0].getType(), name, args);
             if (!result.isEmpty()) return result;
         }
@@ -5944,71 +5962,17 @@ public class StaticTypeCheckingVisitor extends ClassCodeVisitorSupport {
         ParameterVariableExpression(final Parameter parameter) {
             super(parameter);
             this.parameter = parameter;
-            ClassNode inferred = parameter.getNodeMetaData(INFERRED_TYPE);
-            if (inferred == null) {
-                inferred = infer(parameter);
-
-                parameter.setNodeMetaData(INFERRED_TYPE, inferred);
-            }
-        }
-
-        private static ClassNode infer(final Variable variable) {
-            ClassNode originType = variable.getOriginType();
-
-            if (originType.isGenericsPlaceHolder()) {
-                GenericsType[] genericsTypes = originType.getGenericsTypes();
-
-                if (genericsTypes != null && genericsTypes.length > 0) {
-                    GenericsType gt = genericsTypes[0];
-                    ClassNode[] upperBounds = gt.getUpperBounds();
-
-                    if (upperBounds != null && upperBounds.length > 0) {
-                        return upperBounds[0];
-                    }
-                }
-            }
-
-            return originType;
+            this.parameter.getNodeMetaData(INFERRED_TYPE, x -> parameter.getOriginType());
         }
 
         @Override
-        public void copyNodeMetaData(final ASTNode other) {
-            parameter.copyNodeMetaData(other);
+        public Map<?, ?> getMetaDataMap() {
+            return parameter.getMetaDataMap();
         }
 
         @Override
-        public Object putNodeMetaData(final Object key, final Object value) {
-            return parameter.putNodeMetaData(key, value);
-        }
-
-        @Override
-        public void removeNodeMetaData(final Object key) {
-            parameter.removeNodeMetaData(key);
-        }
-
-        @Override
-        public Map<?, ?> getNodeMetaData() {
-            return parameter.getNodeMetaData();
-        }
-
-        @Override
-        public <T> T getNodeMetaData(final Object key) {
-            return parameter.getNodeMetaData(key);
-        }
-
-        @Override
-        public void setNodeMetaData(final Object key, final Object value) {
-            parameter.setNodeMetaData(key, value);
-        }
-
-        @Override
-        public int hashCode() {
-            return parameter.hashCode();
-        }
-
-        @Override
-        public boolean equals(final Object other) {
-            return parameter.equals(other);
+        public void setMetaDataMap(final Map<?, ?> metaDataMap) {
+            parameter.setMetaDataMap(metaDataMap);
         }
     }
 

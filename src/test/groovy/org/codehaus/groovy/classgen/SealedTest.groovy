@@ -31,32 +31,26 @@ class SealedTest {
     @Test
     void testInferredPermittedNestedClasses() {
         assumeTrue(isAtLeastJdk('17.0'))
-        def config = new CompilerConfiguration(targetBytecode: CompilerConfiguration.JDK17)
-        List<Class> classes = (List<Class>) new GroovyShell(config).evaluate('''
-            import groovy.transform.Sealed
-
-            @Sealed class Shape {
+        assertScript '''
+            sealed class Shape {
                 final class Triangle extends Shape { }
                 final class Polygon extends Shape { }
             }
-            Shape.getPermittedSubclasses()
-        ''')
-        assert classes*.name == ['Shape$Triangle', 'Shape$Polygon']
+            List<Class> classes = Shape.getPermittedSubclasses()
+            assert classes*.name == ['Shape$Triangle', 'Shape$Polygon']
+        '''
     }
 
     @Test
     void testInferredPermittedNestedClassesWithNativeDisabled() {
         assumeTrue(isAtLeastJdk('17.0'))
-        def config = new CompilerConfiguration(targetBytecode: CompilerConfiguration.JDK17, sealedNative: false)
-        def classes = new GroovyShell(config).evaluate('''
-            import groovy.transform.Sealed
-
-            @Sealed class Shape {
+        assertScript(new GroovyShell(new CompilerConfiguration(sealedNative: false)), '''
+            sealed class Shape {
                 final class Triangle extends Shape { }
                 final class Polygon extends Shape { }
             }
-            Shape.getPermittedSubclasses()
+            List<Class> classes = Shape.getPermittedSubclasses()
+            assert !classes
         ''')
-        assert !classes
     }
 }

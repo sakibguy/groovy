@@ -16,18 +16,12 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package groovy.bugs
+package org.codehaus.groovy.classgen.asm.sc
 
+import groovy.transform.stc.CoercionSTCTest
 
-import groovy.transform.CompileStatic
-import org.apache.groovy.util.ScriptRunner
-import org.junit.Ignore
-import org.junit.Test
-
-@CompileStatic
-final class Groovy9243 {
-    @Ignore @Test
-    void testResolveNestedClassFromBaseType() {
-        ScriptRunner.runScript('/groovy/bugs/groovy9243/Main.groovy')
-    }
+/**
+ * Unit tests for static compilation : coercions.
+ */
+final class CoercionStaticCompileTests extends CoercionSTCTest implements StaticCompilationTestSupport {
 }
