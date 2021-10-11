@@ -1576,14 +1576,10 @@ public abstract class StaticTypeCheckingSupport {
     }
 
     public static ClassNode resolveClassNodeGenerics(Map<GenericsTypeName, GenericsType> resolvedPlaceholders, final Map<GenericsTypeName, GenericsType> placeholdersFromContext, final ClassNode currentType) {
-        ClassNode target = currentType.redirect();
-        resolvedPlaceholders = new HashMap<>(resolvedPlaceholders);
-        applyContextGenerics(resolvedPlaceholders, placeholdersFromContext);
-
-        Map<GenericsTypeName, GenericsType> connections = new HashMap<>();
-        extractGenericsConnections(connections, currentType, target);
-        applyGenericsConnections(connections, resolvedPlaceholders);
-        return applyGenericsContext(resolvedPlaceholders, currentType);
+        ClassNode type = currentType; // GROOVY-10280, et al.
+        type = applyGenericsContext(resolvedPlaceholders, type);
+        type = applyGenericsContext(placeholdersFromContext, type);
+        return type;
     }
 
     static void applyGenericsConnections(final Map<GenericsTypeName, GenericsType> connections, final Map<GenericsTypeName, GenericsType> resolvedPlaceholders) {
@@ -1910,19 +1906,6 @@ public abstract class StaticTypeCheckingSupport {
             if (genericsType.getUpperBounds() != null) return genericsType.getUpperBounds()[0];
         }
         return genericsType.getType();
-    }
-
-    private static void applyContextGenerics(final Map<GenericsTypeName, GenericsType> resolvedPlaceholders, final Map<GenericsTypeName, GenericsType> placeholdersFromContext) {
-        if (placeholdersFromContext == null) return;
-        for (Map.Entry<GenericsTypeName, GenericsType> entry : resolvedPlaceholders.entrySet()) {
-            GenericsType gt = entry.getValue();
-            if (gt.isPlaceholder()) {
-                GenericsTypeName name = new GenericsTypeName(gt.getName());
-                GenericsType outer = placeholdersFromContext.get(name);
-                if (outer == null) continue;
-                entry.setValue(outer);
-            }
-        }
     }
 
     private static Map<GenericsTypeName, GenericsType> getGenericsParameterMapOfThis(final ClassNode cn) {
