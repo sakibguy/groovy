@@ -16,7 +16,8 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
+
 /**
- * Classes for the JMX Builder.
+ * Utility classes for TOML processing.
  */
-package groovy.jmx.builder
+package org.apache.groovy.toml.util;
