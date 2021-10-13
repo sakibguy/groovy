@@ -16,24 +16,33 @@
  *  specific language governing permissions and limitations
  *  under the License.
  */
-package org.codehaus.groovy.ast;
+package org.codehaus.groovy.tools.stubgenerator
 
-import org.objectweb.asm.Opcodes;
+final class Groovy10299 extends StringSourcesStubTestCase {
 
-/**
- * Represents the anonymous inner class for an enum constant. This subtype is
- * needed so that EnumVisitor can differentiate between the scenarios when an
- * {@link InnerClassNode} represents anonymous inner class for an enum constant
- * versus an enum class defined within another class.
- */
-public class EnumConstantClassNode extends InnerClassNode {
-
-    public EnumConstantClassNode(ClassNode outerClass, String name, ClassNode superClass) {
-        super(outerClass, name, Opcodes.ACC_ENUM | Opcodes.ACC_FINAL, superClass);
+    @Override
+    Map<String, String> provideSources() {
+        [
+            'Pogo.groovy': '''
+                class Pogo {
+                    public final boolean must_init
+                }
+            ''',
+            'Main.java': '''
+                public class Main {
+                    public static void main(String[] args) {
+                        new Pogo();
+                    }
+                }
+            ''',
+        ]
     }
 
-    @Deprecated
-    public EnumConstantClassNode(ClassNode outerClass, String name, int modifiers, ClassNode superClass) {
-        super(outerClass, name, modifiers, superClass);
+    @Override
+    void verifyStubs() {
+        String stub = stubJavaSourceFor('Pogo')
+        assert stub.contains('must_init = false;')
+        assert !stub.contains('boolean -> boolean')
+        assert !stub.contains('new java.lang.Boolean')
     }
 }
