@@ -1662,11 +1662,12 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> {
             Parameter parameter = parameters[i];
             FormalParameterContext parameterCtx = parameter.getNodeMetaData(PARAMETER_CONTEXT);
             ModifierManager parameterModifierManager = parameter.getNodeMetaData(PARAMETER_MODIFIER_MANAGER);
-            PropertyNode propertyNode = declareProperty(parameterCtx, parameterModifierManager, parameter.getType(),
+            ClassNode originType = parameter.getOriginType();
+            PropertyNode propertyNode = declareProperty(parameterCtx, parameterModifierManager, originType,
                     classNode, i, parameter, parameter.getName(), parameter.getModifiers(), parameter.getInitialExpression());
             propertyNode.getField().putNodeMetaData(IS_RECORD_GENERATED, Boolean.TRUE);
 
-            components.add(new RecordComponentNode(classNode, parameter.getName(), parameter.getOriginType(), parameter.getAnnotations()));
+            components.add(new RecordComponentNode(classNode, parameter.getName(), originType, parameter.getAnnotations()));
         }
         return components;
     }
@@ -2000,11 +2001,14 @@ public class AstBuilder extends GroovyParserBaseVisitor<Object> {
         MethodNode methodNode = classNode.addSyntheticMethod(RECORD_COMPACT_CONSTRUCTOR_NAME, Opcodes.ACC_PRIVATE,
                                                                 returnType, parameters, ClassNode.EMPTY_ARRAY, block);
 
+        ConstructorNode dummyConstructorNode = configureAST(new ConstructorNode(modifierManager.getClassMemberModifiersOpValue(), block), ctx);
+        modifierManager.validate(dummyConstructorNode);
+
         modifierManager.attachAnnotations(methodNode);
         attachMapConstructorAnnotationToRecord(classNode, parameters);
         attachTupleConstructorAnnotationToRecord(classNode, parameters);
 
-        return methodNode;
+        return configureAST(methodNode, ctx);
     }
 
     private void attachMapConstructorAnnotationToRecord(ClassNode classNode, Parameter[] parameters) {

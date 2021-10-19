@@ -3269,6 +3269,64 @@ final class TraitASTTransformationTest {
         '''
     }
 
+    @Test // GROOVY-10312
+    void testTraitAccessToInheritedStaticMethods2() {
+        assertScript '''
+            trait Foo {
+                static String staticMethod(String string) {
+                    return string
+                }
+            }
+            trait Bar extends Foo {
+                static String staticMethodWithDefaultArgument(String string = 'works') {
+                    staticMethod(string) // MissingMethodException
+                }
+            }
+
+            class Main implements Bar {
+                static test1() {
+                    String result = staticMethodWithDefaultArgument()
+                    assert result == 'works'
+                }
+                void test2() {
+                    String result = staticMethodWithDefaultArgument()
+                    assert result == 'works'
+                }
+            }
+
+            Main.test1()
+            new Main().test2()
+        '''
+    }
+
+    @Test // GROOVY-10312
+    void testTraitAccessToInheritedStaticMethods3() {
+        assertScript '''
+            interface Foo {
+                public static final String BANG = '!'
+            }
+            trait Bar implements Foo {
+                static String staticMethodWithDefaultArgument(String string = 'works') {
+                    string + BANG
+                }
+            }
+
+            class Main implements Bar {
+                static test1() {
+                    String result = staticMethodWithDefaultArgument()
+                    assert result == 'works!'
+                }
+                void test2() {
+                    String result = staticMethodWithDefaultArgument()
+                    assert result == 'works!'
+                }
+            }
+
+            Main.test1()
+            new Main().test2()
+        '''
+    }
+
     @Test // GROOVY-9386
     void testTraitPropertyInitializedByTap() {
         assertScript '''
